@@ -5,6 +5,7 @@ import os
 import sys
 from tabulate import tabulate
 from wcwidth import wcswidth
+from datetime import datetime
 
 def cjk_ljust(text, width):
     """中英文混合字符串左对齐（按显示宽度计算）"""
@@ -31,10 +32,13 @@ sys.path.insert(0, os.path.join(SKILL_DIR, "scripts"))
 from scripts.fund_fetcher import FundFetcher
 from scripts.position_manager import PositionManager
 from scripts.strategy_engine import StrategyEngine
+from scripts.config_manager import ConfigManager
 
 CONFIG_FILE = os.path.join(SKILL_DIR, "assets", "fund_config.json")
 POSITIONS_FILE = os.path.join(SKILL_DIR, "assets", "fund_positions.json")
 SIGNALS_FILE = os.path.join(SKILL_DIR, "assets", "fund_signals.json")
+DRAWDOWN_CACHE = os.path.join(SKILL_DIR, "assets", "fund_drawdowns.json")
+ALL_FUNDS_CACHE = os.path.join(SKILL_DIR, "assets", "all_funds.json")
 ASSETS_DIR = os.path.join(SKILL_DIR, "assets")
 
 # --- Sector classification ---
@@ -81,6 +85,9 @@ def load_config():
         return json.load(f)
 
 def load_drawdown_cache():
+    if not os.path.exists(DRAWDOWN_CACHE):
+        print("基金缓存不存在，正在生成...")
+        cmd_config_update()
     with open(DRAWDOWN_CACHE, "r", encoding="utf-8") as f:
         return json.load(f).get("funds", [])
 
@@ -185,17 +192,20 @@ def cmd_update():
     if signals['initial']:
         print("\n  【建仓信号详情】")
         for sig in signals['initial']:
-            print(f"    + {sig['fund_code']} {sig.get('fund_name', '')}: 回撤 {sig.get('drawdown', 0):.2%}")
-    
+            amount = sig.get('amount', 0)
+            print(f"    + {sig['fund_code']} {sig.get('fund_name', '')}: 回撤 {sig.get('drawdown', 0):.2%} | 金额 ¥{amount:,.0f}")
+
     if signals['add']:
         print("\n  【加仓信号详情】")
         for sig in signals['add']:
-            print(f"    + {sig['fund_code']}: 当前层数 {sig.get('current_layers', 0)}, 建议加仓 {sig.get('layers', 0)} 层")
-    
+            amount = sig.get('amount', 0)
+            print(f"    + {sig['fund_code']}: 当前层数 {sig.get('current_layers', 0)}, 加仓 {sig.get('layers', 0)} 层 | 金额 ¥{amount:,.0f}")
+
     if signals['remove']:
         print("\n  【减仓信号详情】")
         for sig in signals['remove']:
-            print(f"    - {sig['fund_code']}: {sig.get('reason', '')}")
+            amount = sig.get('amount', 0)
+            print(f"    - {sig['fund_code']}: {sig.get('reason', '')} | 金额 ¥{amount:,.0f}")
 
     # 保存信号到文件，供 nav-update 使用
     from datetime import datetime
@@ -220,62 +230,20 @@ def cmd_report():
     print(json.dumps(info, ensure_ascii=False, indent=2))
 
 def cmd_reset():
-    """Clear positions and re-select from drawdown cache"""
-    config = load_config()
-    funds = load_drawdown_cache()
-    
-    threshold = config["drawdown_threshold"]
-    eligible = [f for f in funds if f.get("drawdown", 0) < -threshold]
-    eligible.sort(key=score_fund, reverse=True)
-    
-    max_per = config.get("max_per_sector", 2)
-    fund_count = config["fund_count"]
-    sector_count = {}
-    selected = []
-    
-    for f in eligible:
-        if len(selected) >= fund_count:
-            break
-        sector = classify(f.get("name", ""))
-        if sector_count.get(sector, 0) >= max_per:
-            continue
-        selected.append(f)
-        sector_count[sector] = sector_count.get(sector, 0) + 1
-    
-    print(f"Selected {len(selected)} funds across {len(sector_count)} sectors:")
-    print(f"{'#':>3} {'Code':<8} {'Name':<26} {'Sector':<12} {'1Y':>8} {'DD':>8}")
-    print("-" * 75)
-    for i, f in enumerate(selected, 1):
-        name = f.get("name", "")[:24]
-        sector = classify(f.get("name", ""))
-        print(f"{i:>3} {f['code']:<8} {name:<26} {sector:<12} {f.get('return_1y',0):>8.2%} {f.get('drawdown',0):>8.2%}")
-    
-    # Clear and rebuild positions
-    fund_codes = [f["code"] for f in selected]
-    pm = PositionManager(config_file=CONFIG_FILE)
-    pm.initialize_positions(fund_codes)
-    fetcher = FundFetcher()
-    amt = config["total_capital"] / config["fund_count"] * (config["initial_position_layers"] / 10)
-    
-    print(f"\nInitializing positions with real-time valuation...")
-    for f in selected:
-        fund_code = f["code"]
-        fund_name = f.get("name", "")
-        
-        # 使用估值接口获取实时估值来建仓，保持数据一致性
-        try:
-            valuation = fetcher.get_valuation(fund_code)
-            if valuation and "estimated_nav" in valuation:
-                nav = valuation["estimated_nav"]  # 使用实时估值
-            else:
-                nav = f.get("nav", 0)  # 回退到缓存数据
-        except Exception as e:
-            print(f"  Warning: Failed to get valuation for {fund_code}, using cached nav")
-            nav = f.get("nav", 0)
-        
-        pm.add_initial_position(fund_code, amt, nav, fund_name)
-    
-    print(f"\nDone. {len(selected)} funds, {amt*len(selected):,.0f} CNY invested.")
+    """清空所有配置，重建环境（执行 config-update 获取最新配置）"""
+    # 1. 清空配置文件
+    files_to_clear = [POSITIONS_FILE, SIGNALS_FILE]
+    for f in files_to_clear:
+        if os.path.exists(f):
+            os.remove(f)
+            print(f"已删除: {f}")
+
+    # 2. 执行 config-update 获取最新配置
+    print("\n开始获取最新配置...")
+    cmd_config_update()
+
+    print("\n✅ 环境重置完成")
+    print("下一步: 执行 python fund.py update 生成交易信号")
 
 def cmd_valuation(args):
     """Query single fund valuation"""
@@ -297,8 +265,8 @@ def cmd_valuation(args):
     else:
         print(f"No valuation data for {code}")
 
-def cmd_nav_update():
-    """晚上真实净值更新（更新净值和收益，并执行当天信号交易）"""
+def cmd_nav_update(auto=False):
+    """晚上真实净值更新（执行交易）"""
     from scripts.strategy_engine import StrategyEngine
 
     print("=" * 60)
@@ -308,6 +276,9 @@ def cmd_nav_update():
 
     strategy = StrategyEngine(config_file=CONFIG_FILE)
     pm = strategy.position_manager
+
+    # 先执行净值更新和收益计算
+    result = strategy.daily_real_update()
 
     # 读取当天的信号文件
     if os.path.exists(SIGNALS_FILE):
@@ -322,25 +293,45 @@ def cmd_nav_update():
     positions_before = list(pm.positions.keys())
     print(f"当前持仓: {len(positions_before)} 只")
 
+    initial_signals = signals.get("initial", [])
     add_signals = signals.get("add", [])
     remove_signals = signals.get("remove", [])
 
-    if add_signals or remove_signals:
+    confirm = "n"  # 默认不执行
+
+    if initial_signals or add_signals or remove_signals:
         print(f"\n📋 待执行交易 (信号日期: {signal_date}):")
         total_add_amount = 0
         total_remove_amount = 0
+        total_initial_amount = 0
+
+        if initial_signals:
+            print(f"\n  【建仓】{len(initial_signals)} 笔:")
+            max_per_fund = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10)
+            for sig in initial_signals:
+                fund_code = sig['fund_code']
+                fund_name = sig.get('fund_name', '')
+                amount = sig.get('amount', 0)
+                # 计算建仓层数 = 买入金额 / 单只基金最大投入金额 * 10
+                layers = amount / max_per_fund * 10 if max_per_fund > 0 else 0
+                total_initial_amount += amount
+                print(f"    + {fund_code} {fund_name}: 建仓 {layers:.1f}层 = ¥{amount:,.0f}")
 
         if add_signals:
             print(f"\n  【加仓】{len(add_signals)} 笔:")
             for sig in add_signals:
                 fund_code = sig['fund_code']
                 layers = sig.get('layers', 0)
-                nav_data = strategy.fetcher.get_current_nav(fund_code)
-                nav = nav_data.get("nav", 1.0) if nav_data else 1.0
-                amount_per_layer = strategy.position_manager.config.get("total_capital", 400000) / 10
-                amount = layers * amount_per_layer
+                amount = sig.get('amount', 0)
+                nav = sig.get('nav', 0)
+                fund_name = sig.get('fund_name', '') or pm.positions.get(fund_code, {}).get('name', '')
+                pos_data = pm.positions.get(fund_code, {})
+                if amount == 0:
+                    single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
+                    amount = single_layer_amount * layers
+                if nav == 0:
+                    nav = pos_data.get("current_nav", 0)
                 total_add_amount += amount
-                fund_name = nav_data.get("name", "") if nav_data else ""
                 print(f"    + {fund_code} {fund_name}: +{layers}层 @ {nav:.4f} = ¥{amount:,.0f}")
 
         if remove_signals:
@@ -354,83 +345,167 @@ def cmd_nav_update():
                     fund_name = pos.get("name", "")
                     print(f"    - {fund_code} {fund_name}: 全部卖出 = ¥{amount:,.0f}")
 
-        print(f"\n  资金变动: -¥{total_add_amount:,.0f} (加仓) / +¥{total_remove_amount:,.0f} (减仓)")
+        print(f"\n  资金变动: ¥{total_initial_amount:,.0f} (建仓) / -¥{total_add_amount:,.0f} (加仓) / +¥{total_remove_amount:,.0f} (减仓)")
 
-        print("\n是否执行以上交易? (y/n): ", end="")
-        try:
-            confirm = input().strip().lower()
-        except EOFError:
+        if not auto:
+            print("\n是否执行以上交易? (y/n): ", end="")
+            try:
+                confirm = input().strip().lower()
+            except EOFError:
+                confirm = "y"
+        else:
             confirm = "y"
 
         if confirm == "y":
-            # 执行加仓
-            for sig in add_signals:
-                try:
-                    fund_code = sig["fund_code"]
-                    layers = sig.get("layers", 0)
-                    if fund_code not in pm.positions:
-                        print(f"  ⚠ {fund_code} 不在持仓中，跳过")
-                        continue
-                    # 获取当前净值
-                    nav_data = strategy.fetcher.get_current_nav(fund_code)
-                    nav = nav_data.get("nav", 1.0) if nav_data else 1.0
-                    pm.add_position(fund_code, layers, nav)
-                    print(f"  ✅ {fund_code} 加仓 {layers} 层 @ {nav:.4f}")
-                except Exception as e:
-                    print(f"  ❌ {sig['fund_code']} 加仓失败: {e}")
-
-            # 执行减仓
-            for sig in remove_signals:
-                try:
-                    fund_code = sig["fund_code"]
-                    layers = sig.get("layers", "all")
-                    if fund_code not in pm.positions:
-                        print(f"  ⚠ {fund_code} 不在持仓中，跳过")
-                        continue
-                    if layers == "all":
-                        pm.remove_position(fund_code)
-                        print(f"  ✅ {fund_code} 全部卖出")
-                    else:
-                        total_amount = pm.positions[fund_code]["total_amount"]
-                        amount = total_amount * layers
-                        pm.remove_position(fund_code, amount=amount)
-                        print(f"  ✅ {fund_code} 卖出 {layers*100:.0f}% (¥{amount:,.0f})")
-                except Exception as e:
-                    print(f"  ❌ {sig['fund_code']} 减仓失败: {e}")
+            # 执行建仓（先初始化所有基金，再逐个添加）
+            fund_codes = [sig["fund_code"] for sig in initial_signals]
+            if fund_codes:
+                pm.initialize_positions(fund_codes)
         else:
             print("  取消执行交易")
 
-    # 执行净值更新
-    result = strategy.daily_real_update()
+    # 已提前执行净值更新和收益计算
+
+    # 再执行交易（加仓/减仓）
+    if confirm == "y" and (initial_signals or add_signals or remove_signals):
+        # 执行建仓
+        max_per_fund = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10)
+        for sig in initial_signals:
+            try:
+                fund_code = sig["fund_code"]
+                fund_name = sig.get("fund_name", "")
+                amount = sig.get("amount", 0)
+                nav = sig.get("nav", 0)
+                # 计算建仓层数 = 买入金额 / 单只基金最大投入金额 * 10
+                layers = amount / max_per_fund * 10 if max_per_fund > 0 else 0
+                pm.add_initial_position(fund_code, amount, nav, fund_name)
+                print(f"  ✅ {fund_code} {fund_name} 建仓 {layers:.1f} 层 @ {nav:.4f} = ¥{amount:,.0f}")
+            except Exception as e:
+                print(f"  ❌ {sig['fund_code']} 建仓失败: {e}")
+
+        # 执行加仓
+        for sig in add_signals:
+            try:
+                fund_code = sig["fund_code"]
+                layers = sig.get("layers", 0)
+                if fund_code not in pm.positions:
+                    print(f"  ⚠ {fund_code} 不在持仓中，跳过")
+                    continue
+                nav_data = strategy.fetcher.get_current_nav(fund_code)
+                nav = nav_data.get("nav", 1.0) if nav_data else 1.0
+                pm.add_position(fund_code, layers, nav)
+                print(f"  ✅ {fund_code} 加仓 {layers} 层 @ {nav:.4f}")
+            except Exception as e:
+                print(f"  ❌ {sig['fund_code']} 加仓失败: {e}")
+
+        # 执行减仓
+        for sig in remove_signals:
+            try:
+                fund_code = sig["fund_code"]
+                layers = sig.get("layers", "all")
+                if fund_code not in pm.positions:
+                    print(f"  ⚠ {fund_code} 不在持仓中，跳过")
+                    continue
+                if layers == "all":
+                    pm.remove_position(fund_code)
+                    print(f"  ✅ {fund_code} 全部卖出")
+                else:
+                    total_amount = pm.positions[fund_code]["total_amount"]
+                    amount = total_amount * layers
+                    pm.remove_position(fund_code, amount=amount)
+                    print(f"  ✅ {fund_code} 卖出 {layers*100:.0f}% (¥{amount:,.0f})")
+            except Exception as e:
+                print(f"  ❌ {sig['fund_code']} 减仓失败: {e}")
+
+        # 交易后重新计算收益
+        for code in pm.positions:
+            pm._calculate_profit(code)
 
     # 删除信号文件
     if os.path.exists(SIGNALS_FILE):
         os.remove(SIGNALS_FILE)
 
-    # 打印汇总
+    # 打印交易后汇总
     positions_after = list(pm.positions.keys())
-    print(f"\n📊 持仓汇总")
-    print(f"  总价值: ¥{result['total_value']:,.2f}")
-    print(f"  当日收益: ¥{result.get('daily_profit', 0):,.2f} ({result.get('daily_return', 0):.2%})")
-    print(f"  累计收益: ¥{result['total_profit']:,.2f} ({result['total_profit_rate']:.2%})")
-    print(f"  持仓数量: {result['position_count']} 只")
-    print(f"  持仓变化: {len(positions_before)} -> {len(positions_after)}")
+    print(f"\n� 交易后最新持仓")
+    total_info = pm.get_all_positions()
+    print(f"  总价值: ¥{total_info['total_value']:,.2f}")
+    print(f"  累计收益: ¥{total_info['total_profit']:,.2f} ({total_info['total_profit_rate']:.2%})")
+    print(f"  持仓数量: {len(total_info['positions'])} 只")
+
+    # 打印持仓详情
+    # 单只基金的最大投入金额 = 总资金 / 基金数量
+    max_per_fund = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10)
+    # 持仓层数 = 持仓成本 / 单只基金的最大投入金额
+    single_layer_amount = max_per_fund / 10
+    print("\n📋 当前持仓详情")
+    print(f"{'基金代码':<10} {'基金名称':<24} {'持仓层数':>8} {'当前市值':>12} {'累计收益':>12} {'收益率':>10}")
+    print("-" * 75)
+    for code, pos in pm.positions.items():
+        total_amount = pos.get("total_amount", 0)
+        current_nav = pos.get("current_nav", 0)
+        average_nav = pos.get("average_nav", 0)
+        if average_nav > 0:
+            current_value = total_amount * (current_nav / average_nav)
+            profit = current_value - total_amount
+            profit_rate = profit / total_amount
+        else:
+            current_value = total_amount
+            profit = 0
+            profit_rate = 0
+        current_layers = total_amount / single_layer_amount
+        print(f"{code:<10} {pos.get('name', '')[:22]:<24} {current_layers:>8.1f} "
+              f"¥{current_value:>10,.0f} ¥{profit:>10,.0f} {profit_rate:>9.2%}")
+
+    # 如果有交易执行，打印交易后最新持仓
+    if confirm == "y" and (initial_signals or add_signals or remove_signals):
+        total_after_trade = 0
+        total_profit_after = 0
+        for code, p in pm.positions.items():
+            total_amount = p.get("total_amount", 0)
+            current_nav = p.get("current_nav", 0)
+            average_nav = p.get("average_nav", 0)
+            if average_nav > 0:
+                current_value = total_amount * (current_nav / average_nav)
+                profit = current_value - total_amount
+            else:
+                current_value = total_amount
+                profit = 0
+            total_after_trade += current_value
+            total_profit_after += profit
+        profit_rate_after = total_profit_after / (total_after_trade - total_profit_after) if total_after_trade > total_profit_after else 0
+        print("\n📋 交易后最新持仓")
+        print(f"  总价值: ¥{total_after_trade:,.2f}")
+        print(f"  累计收益: ¥{total_profit_after:,.2f} ({profit_rate_after:.2%})")
+        print(f"  持仓数量: {len(pm.positions)} 只")
 
     print("\n" + "=" * 60)
     print("净值更新完成")
     print("=" * 60)
 
+def _parse_fraction(s: str) -> float:
+    """解析分数字符串，如 '1/4' -> 0.25"""
+    if '/' in s:
+        num, denom = s.split('/')
+        return float(num) / float(denom)
+    return float(s)
+
 def cmd_trade(args):
     """手动添加交易信号
 
     用法:
-        python fund.py trade add 002207 1    # 添加加仓信号
-        python fund.py trade remove 002207   # 添加减仓信号
-        python fund.py trade list           # 查看当前信号
-        python fund.py trade clear           # 清除所有信号
+        python fund.py trade add 002207 1           # 添加加仓信号（1层）
+        python fund.py trade add 002207 1 ¥2000     # 添加加仓信号（指定金额）
+        python fund.py trade remove 002207          # 添加减仓信号（全部）
+        python fund.py trade remove 002207 1/4      # 添加减仓信号（卖出1/4）
+        python fund.py trade initial 002207 4 ¥2000 # 添加建仓信号（4层，2000元）
+        python fund.py trade list                  # 查看当前信号
+        python fund.py trade cancel 1               # 撤销第1个信号（按索引）
+        python fund.py trade cancel 002207          # 撤销002207的所有信号
+        python fund.py trade clear                 # 清除所有信号
     """
     if not args:
-        print("用法: python fund.py trade <add|remove|list|clear> [基金代码] [层数]")
+        print("用法: python fund.py trade <add|remove|initial|list|clear> [基金代码] [层数]")
         return
 
     subcmd = args[0]
@@ -446,18 +521,76 @@ def cmd_trade(args):
     if subcmd == "list":
         print("📋 当前信号:")
         print(f"  建仓: {len(signals['initial'])} 个")
+        for i, s in enumerate(signals['initial'], 1):
+            amount = s.get('amount', 0)
+            print(f"    [{i}] + {s['fund_code']} {s.get('fund_name', '')}: 建仓{s.get('layers', 0)}层 = ¥{amount:,.0f}")
         print(f"  加仓: {len(signals['add'])} 个")
-        for s in signals['add']:
-            print(f"    + {s['fund_code']}: {s.get('layers', 0)}层")
+        start_idx = len(signals['initial']) + 1
+        for i, s in enumerate(signals['add'], start_idx):
+            amount = s.get('amount', 0)
+            print(f"    [{i}] + {s['fund_code']} {s.get('fund_name', '')}: +{s.get('layers', 0)}层 = ¥{amount:,.0f}")
         print(f"  减仓: {len(signals['remove'])} 个")
-        for s in signals['remove']:
-            print(f"    - {s['fund_code']}: {s.get('reason', '')[:30]}")
+        start_idx = len(signals['initial']) + len(signals['add']) + 1
+        for i, s in enumerate(signals['remove'], start_idx):
+            amount = s.get('amount', 0)
+            print(f"    [{i}] - {s['fund_code']} {s.get('fund_name', '')}: {s.get('reason', '')} = ¥{amount:,.0f}")
         return
 
     if subcmd == "clear":
         if os.path.exists(SIGNALS_FILE):
             os.remove(SIGNALS_FILE)
         print("已清除所有信号")
+        return
+
+    if subcmd == "cancel":
+        if len(args) < 2:
+            print("错误: 缺少参数（索引或基金代码）")
+            return
+        target = args[1]
+        removed = False
+        # 检查是否是指令索引
+        all_signals = signals.get("initial", []) + signals.get("add", []) + signals.get("remove", [])
+        is_valid_index = False
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(all_signals):
+                is_valid_index = True
+        if is_valid_index:
+            idx = int(target) - 1
+            all_signals = signals.get("initial", []) + signals.get("add", []) + signals.get("remove", [])
+            if idx < 0 or idx >= len(all_signals):
+                print(f"错误: 无效的索引 {idx + 1}，当前共有 {len(all_signals)} 个信号")
+                return
+            sig = all_signals[idx]
+            fund_code = sig["fund_code"]
+            # 从对应的信号列表中移除
+            for key in ["initial", "add", "remove"]:
+                for i, s in enumerate(signals[key]):
+                    if s["fund_code"] == fund_code and s.get("layers") == sig.get("layers"):
+                        signals[key].pop(i)
+                        removed = True
+                        break
+                if removed:
+                    break
+            print(f"✅ 已撤销信号: {fund_code} (索引 {idx + 1})")
+        else:
+            # 按基金代码撤销所有信号
+            fund_code = target
+            found = False
+            for key in ["initial", "add", "remove"]:
+                original_len = len(signals[key])
+                signals[key] = [s for s in signals[key] if s["fund_code"] != fund_code]
+                if len(signals[key]) < original_len:
+                    found = True
+            if found:
+                print(f"✅ 已撤销 {fund_code} 的所有信号")
+                removed = True
+            else:
+                print(f"错误: 未找到 {fund_code} 相关的信号")
+                return
+        if removed:
+            with open(SIGNALS_FILE, "w", encoding="utf-8") as f:
+                json.dump({"date": signal_data.get("date", ""), "signals": signals}, f, ensure_ascii=False, indent=2)
         return
 
     if len(args) < 2:
@@ -467,30 +600,96 @@ def cmd_trade(args):
     fund_code = args[1]
 
     if subcmd == "add":
-        layers = int(args[2]) if len(args) > 2 else 1
+        layers = 1
+        amount = None
+        for arg in args[2:]:
+            if arg.startswith("¥"):
+                amount = float(arg[1:].replace(",", ""))
+            else:
+                layers = float(arg)
         pm = PositionManager(config_file=CONFIG_FILE)
         if fund_code not in pm.positions:
             print(f"错误: {fund_code} 不在持仓中")
             return
-        current_layers = pm.positions[fund_code].get("total_layers", 0)
+        pos = pm.positions[fund_code]
+        current_layers = pos.get("total_layers", 0)
+        single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
+        if amount is None:
+            amount = single_layer_amount * layers
+            actual_layers = layers
+        else:
+            actual_layers = amount / single_layer_amount
         signals["add"].append({
             "fund_code": fund_code,
-            "layers": layers,
+            "fund_name": pos.get("name", ""),
+            "layers": actual_layers,
+            "amount": amount,
+            "nav": pos.get("current_nav", 0),
             "current_layers": current_layers,
-            "reason": f"手动添加加仓 {layers} 层"
+            "reason": f"手动添加加仓 {actual_layers:.1f} 层"
         })
-        print(f"✅ 已添加加仓信号: {fund_code} +{layers}层")
+        print(f"✅ 已添加加仓信号: {fund_code} {pos.get('name', '')} +{actual_layers:.1f}层 = ¥{amount:,.0f}")
 
     elif subcmd == "remove":
+        layers_str = args[2] if len(args) > 2 else "all"
         pm = PositionManager(config_file=CONFIG_FILE)
         if fund_code not in pm.positions:
             print(f"错误: {fund_code} 不在持仓中")
             return
+        pos = pm.positions[fund_code]
+        total_amount = pos.get("total_amount", 0)
+        if layers_str == "all":
+            layers = "all"
+            amount = total_amount
+        else:
+            layers = _parse_fraction(layers_str)
+            amount = total_amount * layers
         signals["remove"].append({
             "fund_code": fund_code,
-            "reason": "手动添加减仓"
+            "fund_name": pos.get("name", ""),
+            "layers": layers,
+            "amount": amount,
+            "reason": f"手动添加减仓 {layers_str}"
         })
-        print(f"✅ 已添加减仓信号: {fund_code}")
+        print(f"✅ 已添加减仓信号: {fund_code} {pos.get('name', '')} 卖出 {layers_str} = ¥{amount:,.0f}")
+
+    elif subcmd == "initial":
+        layers = 4
+        amount = None
+        for arg in args[2:]:
+            if arg.startswith("¥"):
+                amount = float(arg[1:].replace(",", ""))
+            else:
+                layers = float(arg)
+        # 从缓存获取基金信息
+        fund_name = ""
+        nav = 0
+        from scripts.fetch_all_funds import fetch_all_funds
+        all_funds = fetch_all_funds(all_funds_count=3000)
+        for f in all_funds:
+            if f.get("code") == fund_code:
+                fund_name = f.get("name", "")
+                nav = f.get("nav", 0)
+                break
+        if not fund_name:
+            print(f"错误: 未找到基金 {fund_code} 的信息，请确认基金代码正确")
+            return
+        pm = PositionManager(config_file=CONFIG_FILE)
+        single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
+        if amount is None:
+            amount = single_layer_amount * layers
+            actual_layers = layers
+        else:
+            actual_layers = amount / single_layer_amount
+        signals["initial"].append({
+            "fund_code": fund_code,
+            "fund_name": fund_name,
+            "layers": actual_layers,
+            "amount": amount,
+            "nav": nav,
+            "reason": f"手动添加建仓 {actual_layers:.1f} 层"
+        })
+        print(f"✅ 已添加建仓信号: {fund_code} {fund_name} 建仓{actual_layers:.1f}层 = ¥{amount:,.0f}")
 
     else:
         print(f"未知子命令: {subcmd}")
@@ -510,17 +709,27 @@ def cmd_config_update():
     """更新配置文件和缓存数据
 
     更新内容：
+    - assets/fund_config.json（配置文件，不存在时创建）
     - assets/fund_drawdowns.json（基金回撤率数据）
     - assets/all_funds.json（基金列表数据）
     """
     from scripts.fetch_all_funds import fetch_all_funds
     from scripts.generate_drawdown_data import generate_drawdown_data
 
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+    if not os.path.exists(CONFIG_FILE):
+        print(f"配置文件不存在，从模板创建...")
+        config = ConfigManager(config_file=CONFIG_FILE)._get_default_config()
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        print(f"✅ 已创建默认配置文件: {CONFIG_FILE}")
+    else:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = json.load(f)
 
     all_funds_count = config.get("all_funds_count", 3000)
     drawdown_cache_count = config.get("drawdown_cache_count", 800)
+    lookback_days = config.get("lookback_days", 90)
+    drawdown_max_workers = config.get("drawdown_max_workers", 30)
     all_funds_cache = os.path.join(ASSETS_DIR, "all_funds.json")
     drawdown_cache = os.path.join(ASSETS_DIR, "fund_drawdowns.json")
 
@@ -541,7 +750,7 @@ def cmd_config_update():
     if os.path.exists(drawdown_cache):
         os.remove(drawdown_cache)
     try:
-        generate_drawdown_data(limit=drawdown_cache_count)
+        generate_drawdown_data(limit=drawdown_cache_count, lookback_days=lookback_days, max_workers=drawdown_max_workers)
         print("✅ 回撤率数据更新完成")
     except Exception as e:
         print(f"❌ 回撤率数据更新失败: {e}")
@@ -678,7 +887,8 @@ def main():
     elif cmd == "update":
         cmd_update()
     elif cmd == "nav-update":
-        cmd_nav_update()
+        auto = "--auto" in sys.argv
+        cmd_nav_update(auto=auto)
     elif cmd == "report":
         cmd_report()
     elif cmd == "reset":
@@ -689,9 +899,24 @@ def main():
         cmd_valuation(sys.argv[2:])
     elif cmd == "config-update":
         cmd_config_update()
+    elif cmd == "top-return":
+        from scripts.show_top_return import get_top_return_funds
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-n", "--top", type=int, default=100)
+        args = parser.parse_args(sys.argv[2:] if len(sys.argv) > 2 else [])
+        get_top_return_funds(top=args.top)
+    elif cmd == "top-drawdown":
+        from scripts.show_top_drawdown import get_top_drawdown_funds
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-n", "--top", type=int, default=100)
+        args = parser.parse_args(sys.argv[2:] if len(sys.argv) > 2 else [])
+        get_top_drawdown_funds(top=args.top)
     else:
         print(f"Unknown command: {cmd}")
-        print("Available: status, update, nav-update, report, reset, trade, valuation, config-update")
+        print("Available: status, update, nav-update, report, reset, trade, valuation, config-update, top-return, top-drawdown")
+        print("  nav-update --auto: 自动执行交易，无需确认")
 
 if __name__ == "__main__":
     main()

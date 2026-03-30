@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 微信推送模块
-通过企业微信机器人推送消息
+通过 OpenClaw message 工具推送消息到微信
 """
 
 import json
 import os
-import requests
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -23,8 +23,7 @@ class WechatNotifier:
         """
         self.config_file = config_file
         self.config = self._load_config()
-        self.webhook_url = self.config.get("wechat", {}).get("webhook_url", "")
-        self.enabled = self.config.get("wechat", {}).get("enabled", False)
+        self.enabled = self.config.get("wechat", {}).get("enabled", True)
     
     def _load_config(self) -> Dict:
         """加载配置文件"""
@@ -33,53 +32,51 @@ class WechatNotifier:
                 return json.load(f)
         return {
             "wechat": {
-                "enabled": False,
-                "webhook_url": ""
+                "enabled": True
             }
         }
     
     def _send_message(self, message: str, msgtype: str = "text") -> bool:
-        """发送消息
+        """发送消息到微信（通过 OpenClaw message 工具）
         
         Args:
             message: 消息内容
-            msgtype: 消息类型
+            msgtype: 消息类型（text 或 markdown）
         
         Returns:
             是否发送成功
         """
-        if not self.enabled or not self.webhook_url:
+        if not self.enabled:
             return False
         
         try:
-            if msgtype == "text":
-                data = {
-                    "msgtype": "text",
-                    "text": {
-                        "content": message
-                    }
-                }
-            elif msgtype == "markdown":
-                data = {
-                    "msgtype": "markdown",
-                    "markdown": {
-                        "content": message
-                    }
-                }
-            else:
-                return False
+            # 直接调用 OpenClaw 的 message 工具
+            # 通过 Python 的 message 模块
+            from openclaw.tools import message as msg_tool
             
-            response = requests.post(
-                self.webhook_url,
-                json=data,
-                headers={"Content-Type": "application/json"},
-                timeout=10
+            result = msg_tool.send(
+                channel="wechat",
+                message=message
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("errcode") == 0
-            return False
+            return result.get("success", False)
+        except ImportError:
+            # 如果 OpenClaw 模块不可用，尝试通过 HTTP 调用
+            try:
+                import requests
+                # 假设 OpenClaw 的 message API 在本地运行
+                response = requests.post(
+                    "http://localhost:8080/api/message/send",
+                    json={
+                        "channel": "wechat",
+                        "message": message
+                    },
+                    timeout=10
+                )
+                return response.status_code == 200
+            except Exception as e:
+                print(f"发送微信消息失败: {e}")
+                return False
         except Exception as e:
             print(f"发送微信消息失败: {e}")
             return False

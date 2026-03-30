@@ -9,9 +9,9 @@ license: Proprietary
 基于天天基金 API 的自动化量化投资工具，支持回撤建仓、动态加仓、止盈止损策略。
 
 ## 快速启动
-  - 首次运行需要按照./assets/config_template.json配置文件格式初始化配置，修改后保存为./assets/fund_config.json, 可以询问用户是否要改动配置项，不改动则默认使用模板配置项
-  - 配置文件中包含参数可以参考 ### 基础参数
-  - ./assets/fund_config.json文件生成后，启动命令 `python fund.py config-update`  获取基金列表和缓存回撤数据就可以开始运行了
+  - 首次运行 `python fund.py status` 时，若不存在 `fund_config.json`，会自动从模板创建默认配置
+  - 用户可以通过对话修改配置项（参考 ### 基础参数），说"修改配置"即可
+  - 配置完成后执行 `python fund.py config-update` 获取基金列表和回撤缓存
 
 ## 快速命令
 
@@ -19,7 +19,7 @@ license: Proprietary
 
 ```python
 
-# 查看当前持仓（首次运行自动从模板创建默认配置）
+# 查看当前持仓（首次运行自动从模板创建配置，可询问用户是否更改配置）
 python fund.py status
 
 # 早盘配置更新（每天 10:00 执行）
@@ -29,12 +29,13 @@ python fund.py config-update
 python fund.py update
 
 # 晚上真实净值更新（收盘后，每天 22:00 执行）
-python fund.py nav-update
+python fund.py nav-update  # 手动执行（需要确认）
+python fund.py nav-update --auto  # 自动执行（用于定时任务，无需确认）
 
 # 仅生成报告
 python fund.py report
 
-# 重置持仓（重新筛选+建仓）
+# 重置持仓（重新获取配置文件）
 python fund.py reset
 
 # 执行交易（添加交易信号，供 nav-update 执行）
@@ -42,6 +43,12 @@ python fund.py trade
 
 # 单只基金估值查询
 python fund.py valuation --code 002207
+
+# 查看年收益率排名 TOP N
+python fund.py top-return -n 20
+
+# 查看回撤率排名 TOP N
+python fund.py top-drawdown -n 20
 
 ```
 
@@ -108,7 +115,12 @@ python fund.py valuation --code 002207
 python fund.py trade list
 
 # 添加加仓信号（nav-update 时执行）
-python fund.py trade add 002207 1    # 002207 加仓 1 层
+python fund.py trade add 002207 1           # 002207 加仓 1 层
+python fund.py trade add 002207 ¥2000      # 002207 加仓 ¥2000（按金额，自动计算层数）
+
+# 添加建仓信号（nav-update 时执行，用于新建仓）
+python fund.py trade initial 002207 4       # 002207 建仓 4 层
+python fund.py trade initial 002207 4 ¥2000 # 002207 建仓 4 层，¥2000
 
 # 添加减仓信号（nav-update 时执行）
 python fund.py trade remove 002207          # 002207 全部卖出
@@ -116,6 +128,10 @@ python fund.py trade remove 002207 1/4        # 002207 卖出 1/4 层
 
 # 清除所有信号
 python fund.py trade clear
+
+# 撤销信号
+python fund.py trade cancel 1           # 撤销第1个信号（按索引）
+python fund.py trade cancel 002207      # 撤销002207的所有信号
 ```
 
 ## 配置文件
@@ -132,9 +148,56 @@ python fund.py trade clear
 | `low_fee_days`            | 低费率天数（清仓前 N-1 天不买） | 7     |
 | `all_funds_count`         | 基金列表缓存数量           | 3000  |
 | `drawdown_cache_count`    | 回撤率缓存数量            | 800   |
+| `lookback_days`           | 回撤计算回看天数           | 90    |
+| `drawdown_max_workers`    | 回撤计算并发数            | 30    |
 | `max_per_sector`          | 同板块最多几只            | 2     |
 | `initial_position_layers` | 建仓层数               | 4     |
 | `max_layers`              | 单只基金最大层数           | 10    |
+| `add_position`            | 加仓规则（见下方详解）       |       |
+| `stop_loss`               | 止损规则（见下方详解）       |       |
+| `remove_position`         | 减仓规则（见下方详解）       |       |
+
+### 加仓规则 (add_position)
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 是否启用 | true |
+| `max_total_layers` | 单只基金最大层数 | 10 |
+| `rules` | 加仓规则列表 | 见下方 |
+
+**rules 规则匹配逻辑：**
+- 按 `min_return` 从大到小排序
+- 找到第一个满足 `min_return <= 当日涨幅 < max_return` 的规则
+
+| 规则示例 | 当日涨幅范围 | 加仓层数 |
+| --- | --- | --- |
+| `{"min_return": 0.005, "max_return": -0.005, "layers": 0.5}` | -0.5% ≤ 涨幅 < 0.5% | 0.5 层 |
+| `{"min_return": -0.01, "max_return": -0.005, "layers": 1}` | -1% ≤ 涨幅 < -0.5% | 1 层 |
+| `{"min_return": -0.015, "max_return": -0.01, "layers": 1.5}` | -1.5% ≤ 涨幅 < -1% | 1.5 层 |
+| `{"min_return": -0.025, "max_return": -0.015, "layers": 2}` | -2.5% ≤ 涨幅 < -1.5% | 2 层 |
+| `{"min_return": -0.03, "max_return": -0.025, "layers": 3}` | -3% ≤ 涨幅 < -2.5% | 3 层 |
+| `{"min_return": -1, "max_return": -0.03, "layers": 4}` | 涨幅 < -3% | 4 层 |
+
+### 止损规则 (stop_loss)
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 是否启用 | true |
+| `max_loss` | 最大亏损阈值（负数） | -0.15 |
+
+### 减仓规则 (remove_position)
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 是否启用 | true |
+| `rules` | 减仓规则列表 | 见下方 |
+
+**rules 规则匹配逻辑：**
+- 按 `min_profit_rate` 从大到小排序
+- 找到第一个满足 `收益率 >= min_profit_rate` 的规则
+
+| 规则示例 | 盈利阈值 | 卖出比例 |
+| --- | --- | --- |
+| `{"min_profit_rate": 0.15, "layers": "all"}` | 收益率 >= 15% | 全部卖出 |
+| `{"min_profit_rate": 0.12, "layers": 0.5}` | 收益率 >= 12% | 卖出 50% |
+| `{"min_profit_rate": 0.10, "layers": 0.5}` | 收益率 >= 10% | 卖出 50% |
 
 ### 完整配置示例
 ```
@@ -146,6 +209,8 @@ python fund.py trade clear
   "low_fee_days": 7,
   "all_funds_count": 3000,
   "drawdown_cache_count": 800,
+  "lookback_days": 90,
+  "drawdown_max_workers": 30,
   "max_per_sector": 2,
   "initial_position_layers": 4,
   "max_layers": 10,
@@ -186,22 +251,22 @@ python fund.py trade clear
 }
 ```
 ## 数据文件
-| 文件                           | 说明                                         |
-| ---------------------------- | ------------------------------------------ |
-| `assets/fund_config.json`    | 配置文件                                       |
-| `assets/fund_positions.json` | 持仓数据                                       |
-| `fund_signals.json`          | 待执行的交易信号（update/trade 生成，nav-update 执行后删除） |
-| `assets/fund_drawdowns.json` | 回撤缓存（`drawdown_cache_count` 只），每日更新        |
-| `assets/all_funds.json`      | 基金列表缓存（`all_funds_count` 只），每日更新           |
+| 文件                              | 说明                                         |
+| -------------------------------- | ------------------------------------------ |
+| `assets/fund_config.json`        | 配置文件                                       |
+| `assets/fund_positions.json`     | 持仓数据                                       |
+| `assets/fund_signals.json`      | 待执行的交易信号（update/trade 生成，nav-update 执行后删除） |
+| `assets/fund_drawdowns.json`     | 回撤缓存（`drawdown_cache_count` 只），每日更新        |
+| `assets/all_funds.json`          | 基金列表缓存（`all_funds_count` 只），每日更新           |
 
 
 ## 定时任务配置
-| 时间     | 命令                              | 说明                          |
-| ------ | ------------------------------- | --------------------------- |
-| 10:00  | `python fund.py config-update`  | 早盘配置更新（更新基金列表和回撤缓存）       |
-| 10:00  | `python fund.py report`         | 每周六/每月1号生成报告              |
-| 14:45  | `python fund.py update`         | 下午估值更新（生成交易信号）            |
-| 22:00  | `python fund.py nav-update`     | 晚上净值更新（执行交易，用户确认后更新持仓）   |
+| 时间      | 命令                              | 说明                          |
+| ------- | ------------------------------- | --------------------------- |
+| 每天 10:00 | `python fund.py config-update`  | 手动执行更新基金列表和回撤缓存（建议交易日前一天或当日早盘执行） |
+| 10:00   | `python fund.py report`         | 每周六/每月1号生成报告              |
+| 14:45   | `python fund.py update`         | 下午估值更新（生成交易信号）            |
+| 22:00   | `python fund.py nav-update --auto`     | 晚上净值更新（自动执行交易，无需用户确认）   |
 
 Cron 表达式参考：
 ```

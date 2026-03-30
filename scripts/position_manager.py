@@ -112,16 +112,18 @@ class PositionManager:
         self.positions[fund_code]["total_amount"] += amount
         self.positions[fund_code]["total_layers"] += self.config.get("initial_position_layers", 4)
         self.positions[fund_code]["average_nav"] = self._calculate_average_nav(fund_code)
+        self.positions[fund_code]["current_nav"] = nav  # 初始建仓时，当前净值等于买入净值
         self.positions[fund_code]["last_update"] = datetime.now().isoformat()
         
         if fund_name:
             self.positions[fund_code]["name"] = fund_name
         
+        self._calculate_profit(fund_code)  # 计算初始收益
         self._save_positions()
     
     def add_position(self, fund_code: str, layers: float, nav: float):
         """添加加仓
-        
+
         Args:
             fund_code: 基金代码
             layers: 加仓层数
@@ -129,26 +131,26 @@ class PositionManager:
         """
         if fund_code not in self.positions:
             raise ValueError(f"基金 {fund_code} 未持仓")
-        
+
         # 检查是否达到最大层数
         if self.positions[fund_code]["total_layers"] + layers > self.config.get("max_layers", 10):
             raise ValueError(f"基金 {fund_code} 已达到最大持仓层数")
-        
+
         # 检查建仓日期是否在加仓有效期内
         created_at = datetime.fromisoformat(self.positions[fund_code]["created_at"])
         current_date = datetime.now()
-        
+
         # 计算清仓日期（建仓后第hold_days天）
-        clear_date = created_at + timedelta(days=self.config.get("hold_days", 30) - 1)  # 建仓当天算第1天
-        
-        # 计算加仓有效期
-        start_date = created_at + timedelta(days=1)  # 建仓次日开始
-        end_date = clear_date - timedelta(days=self.config.get("low_fee_days", 7) - 1)  # 清仓前low_fee_days天
-        
+        clear_date = created_at + timedelta(days=self.config.get("hold_days", 30) - 1)
+
+        # 计算加仓有效期（建仓当天即可加仓）
+        start_date = created_at  # 建仓当天即可加仓
+        end_date = clear_date - timedelta(days=self.config.get("low_fee_days", 7) - 1)
+
         # 检查是否在加仓有效期内
         if not (start_date <= current_date <= end_date):
             raise ValueError(f"基金 {fund_code} 不在加仓有效期内")
-        
+
         # 计算加仓金额
         single_layer_amount = self.config["total_capital"] / self.config["fund_count"] / 10
         amount = single_layer_amount * layers
@@ -167,6 +169,7 @@ class PositionManager:
         self.positions[fund_code]["total_layers"] += layers
         self.positions[fund_code]["average_nav"] = self._calculate_average_nav(fund_code)
         self.positions[fund_code]["last_update"] = datetime.now().isoformat()
+        self._calculate_profit(fund_code)
         
         self._save_positions()
     
@@ -191,10 +194,18 @@ class PositionManager:
             "shares": amount / self.positions[fund_code]["current_nav"],
             "date": datetime.now().isoformat()
         }
-        
+
         self.positions[fund_code]["positions"].append(position)
+
+        # 计算减少的层数比例（先算，用原来的金额）
+        original_amount = self.positions[fund_code]["total_amount"]
+        reduce_ratio = amount / original_amount if original_amount > 0 else 0
+        reduce_layers = self.positions[fund_code]["total_layers"] * reduce_ratio
+
+        # 再减少金额和层数
         self.positions[fund_code]["total_amount"] -= amount
-        
+        self.positions[fund_code]["total_layers"] -= reduce_layers
+
         # 如果全部卖出，清空持仓
         if self.positions[fund_code]["total_amount"] <= 0:
             del self.positions[fund_code]
@@ -250,6 +261,10 @@ class PositionManager:
             current_value = position["total_amount"] * (position["current_nav"] / position["average_nav"])
             position["profit"] = current_value - position["total_amount"]
             position["profit_rate"] = position["profit"] / position["total_amount"]
+        else:
+            # 初始建仓时，current_nav 和 average_nav 相同，收益为0
+            position["profit"] = 0
+            position["profit_rate"] = 0
     
     def get_position_info(self, fund_code: str) -> Dict:
         """获取持仓信息

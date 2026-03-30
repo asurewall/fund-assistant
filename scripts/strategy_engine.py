@@ -60,7 +60,10 @@ class StrategyEngine:
             "drawdown_threshold": 0.20,
             "hold_days": 30,
             "low_fee_days": 7,
+            "all_funds_count": 3000,
             "drawdown_cache_count": 800,
+            "lookback_days": 90,
+            "drawdown_max_workers": 30,
             "initial_position_layers": 4,
             "max_layers": 10,
             "max_per_sector": 2,
@@ -248,7 +251,7 @@ class StrategyEngine:
                 sep_line += "-" * w + " "
             print(header_line)
             print(sep_line)
-            for f in sorted(eligible_funds, key=lambda x: x.get("drawdown", 0))[:10]:
+            for f in sorted(eligible_funds, key=lambda x: x.get("drawdown", 0)):
                 name = f.get("name", "")[:28]
                 row = (
                     cjk_ljust(f.get("code", ""), col_widths[0]) + " " +
@@ -308,7 +311,13 @@ class StrategyEngine:
             sector_count[sector] = sector_count.get(sector, 0) + 1
             selected_count += 1
         
-        return signals
+        # 最终安全检查：确保没有已持仓的基金
+        final_signals = []
+        for sig in signals:
+            if sig["fund_code"] not in self.position_manager.positions:
+                final_signals.append(sig)
+        
+        return final_signals
     
     def generate_add_position_signals(self, daily_changes: Dict[str, float]) -> List[Dict]:
         """生成加仓信号
@@ -593,7 +602,7 @@ class StrategyEngine:
             更新结果
         """
         print("\n📋 持仓基金净值详情")
-        print(f"{'基金代码':<10} {'基金名称':<22} {'净值':>10} {'当日涨幅':>10} {'待确认市值':>14} {'累计收益':>12}")
+        print(f"{'基金代码':<10} {'基金名称':<22} {'净值':>10} {'当日涨幅':>10} {'当前市值':>14} {'累计收益':>12}")
         print("-" * 95)
 
         # 更新持仓真实净值（直接从API获取最新净值，不使用缓存）
@@ -620,14 +629,20 @@ class StrategyEngine:
             except Exception as e:
                 print(f"更新基金 {fund_code} 净值失败: {e}")
 
+        # 计算当日收益
+        daily_profit = 0
+        for code, p in self.position_manager.positions.items():
+            total_amount = p.get("total_amount", 0)
+            current_nav = p.get("current_nav", 0)
+            average_nav = p.get("average_nav", 0)
+            if average_nav > 0:
+                current_value = total_amount * (current_nav / average_nav)
+            else:
+                current_value = 0
+            daily_profit += current_value * daily_changes.get(code, 0)
+
         # 获取总体持仓信息
         total_info = self.position_manager.get_all_positions()
-
-        # 计算当日收益
-        daily_profit = sum(
-            p.get("current_value", 0) * daily_changes.get(code, 0)
-            for code, p in self.position_manager.positions.items()
-        )
         daily_return = daily_profit / total_info["total_value"] if total_info["total_value"] > 0 else 0
 
         print("-" * 95)

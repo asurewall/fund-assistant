@@ -6,6 +6,8 @@
   "low_fee_days": 7,
   "all_funds_count": 3000,
   "drawdown_cache_count": 800,
+  "lookback_days": 90,
+  "drawdown_max_workers": 30,
   "initial_position_layers": 4,
   "max_layers": 10,
   "max_per_sector": 2,

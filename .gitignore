@@ -1,0 +1,53 @@
+# Python compiled files
+__pycache__/
+scripts/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+.env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Configuration files (user-specific)
+assets/fund_config.json
+assets/fund_positions.json
+assets/fund_signals.json
+
+# Cache files
+assets/fund_drawdowns.json
+assets/all_funds.json
+
+# Test files
+*.pyc
+*.pyo
+*.pyd
+
+# Build files
+dist/
+build/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
