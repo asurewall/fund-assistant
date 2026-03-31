@@ -277,7 +277,7 @@ def cmd_nav_update(auto=False):
     strategy = StrategyEngine(config_file=CONFIG_FILE)
     pm = strategy.position_manager
 
-    # 先执行净值更新和收益计算
+    # 先执行净值更新和收益计算（获取实时净值）
     result = strategy.daily_real_update()
 
     # 读取当天的信号文件

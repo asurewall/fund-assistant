@@ -112,12 +112,15 @@ class PositionManager:
         self.positions[fund_code]["total_amount"] += amount
         self.positions[fund_code]["total_layers"] += self.config.get("initial_position_layers", 4)
         self.positions[fund_code]["average_nav"] = self._calculate_average_nav(fund_code)
-        self.positions[fund_code]["current_nav"] = nav  # 初始建仓时，当前净值等于买入净值
         self.positions[fund_code]["last_update"] = datetime.now().isoformat()
         
         if fund_name:
             self.positions[fund_code]["name"] = fund_name
         
+        # 初始建仓时不计算收益，等待晚上 nav-update 获取实时净值
+        # self._calculate_profit(fund_code)  # 计算初始收益
+        # 但需要初始化 current_nav 为买入净值，避免后续计算错误
+        self.positions[fund_code]["current_nav"] = nav
         self._calculate_profit(fund_code)  # 计算初始收益
         self._save_positions()
     
@@ -248,7 +251,8 @@ class PositionManager:
                 total_shares -= pos["shares"]
                 total_cost -= pos["amount"]
         
-        return total_cost / total_shares if total_shares > 0 else 0
+        avg_nav = total_cost / total_shares if total_shares > 0 else 0
+        return round(avg_nav, 4)  # 保留4位小数，四舍五入
     
     def _calculate_profit(self, fund_code: str):
         """计算收益
