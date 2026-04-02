@@ -208,9 +208,12 @@ class StrategyEngine:
             return 0
 
         for rule in rules:
-            min_return = rule.get("min_return", -1)
-            max_return = rule.get("max_return", 0)
-            if max_return <= daily_change < min_return:
+            min_return = rule.get("min_return", -1)  # 较负的值（如 -0.025），区间下限
+            max_return = rule.get("max_return", 0)   # 较正的值（如 -0.015），区间上限
+            # 条件：min_return <= daily_change < max_return
+            # 即：daily_change 在 [min_return, max_return) 区间内
+            # 例如：-0.025 <= -0.02 < -0.015 为真
+            if min_return <= daily_change < max_return:
                 return rule.get("layers", 0)
 
         return 0
@@ -321,21 +324,18 @@ class StrategyEngine:
     
     def generate_add_position_signals(self, daily_changes: Dict[str, float]) -> List[Dict]:
         """生成加仓信号
-        
+
         Args:
             daily_changes: 基金当日涨跌幅
-        
+
         Returns:
             加仓信号列表
         """
         signals = []
-        
         for fund_code, daily_change in daily_changes.items():
             if fund_code not in self.position_manager.positions:
                 continue
-            
             position = self.position_manager.get_position_info(fund_code)
-            
             # 检查是否达到最大层数
             if position["total_layers"] >= self.config["max_layers"]:
                 continue
@@ -374,7 +374,11 @@ class StrategyEngine:
                     "reason": f"当日跌幅 {daily_change*100:.1f}%，加仓 {layers} 层"
                 }
                 signals.append(signal)
-        
+                print(f"  {fund_code}: ✅ 生成加仓信号（{daily_change*100:.2f}%, {layers}层）")
+            else:
+                print(f"  {fund_code}: 跌幅{daily_change*100:.2f}%未达到加仓条件")
+
+        print(f"=== 共生成 {len(signals)} 个加仓信号 ===\n")
         return signals
     
     def generate_remove_position_signals(self) -> List[Dict]:
@@ -543,7 +547,6 @@ class StrategyEngine:
             except Exception as e:
                 print(f"获取基金 {fund_code} 估值失败: {e}")
                 daily_changes[fund_code] = 0.0
-        
         # 计算当日预估总收益
         total_value = sum(p.get("current_value", 0) for p in self.position_manager.positions.values())
         daily_profit = sum(
