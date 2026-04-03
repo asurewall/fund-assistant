@@ -238,10 +238,6 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
       {"min_profit_rate": 0.10, "layers": 0.5}
     ]
   },
-  "wechat": {
-    "enabled": false,
-    "webhook_url": ""
-  },
   "schedule": {
     "estimate_update": "45 14 * * *",
     "real_update": "0 22 * * *",
@@ -263,10 +259,10 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
 ## 定时任务配置
 | 时间      | 命令                              | 说明                          |
 | ------- | ------------------------------- | --------------------------- |
-| 每天 10:00 | `python fund.py config-update`  | 手动执行更新基金列表和回撤缓存（建议交易日前一天或当日早盘执行） |
+| 10:00 | `python fund.py config-update`  | 周一到周五执行更新基金列表和回撤缓存（建议交易日前一天或当日早盘执行） |
 | 10:00   | `python fund.py report`         | 每周六/每月1号生成报告              |
-| 14:45   | `python fund.py update`         | 下午估值更新（生成交易信号）            |
-| 22:00   | `python fund.py nav-update --auto`     | 晚上净值更新（自动执行交易，无需用户确认）   |
+| 14:45   | `python fund.py update`         | 周一到周五下午估值更新（生成交易信号）            |
+| 22:00   | `python fund.py nav-update --auto`     | 周一到周五晚上净值更新（自动执行交易，无需用户确认）   |
 
 Cron 表达式参考：
 ```
@@ -284,4 +280,3 @@ Cron 表达式参考：
 1. 交易信号非自动执行：update 命令仅生成信号，需 nav-update 时用户确认后才执行
 2. 回撤缓存每日更新：config-update 会刷新基金列表和回撤率缓存
 3. 手动交易灵活干预：可通过 trade add/remove 随时调整策略
-4. 微信通知可选：配置 webhook 后可接收交易通知

@@ -15,7 +15,6 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from position_manager import PositionManager
-from wechat_notifier import WechatNotifier
 from config_manager import ConfigManager
 
 class ReportGenerator:
@@ -24,7 +23,6 @@ class ReportGenerator:
     def __init__(self):
         """初始化报告生成器"""
         self.position_manager = PositionManager()
-        self.notifier = WechatNotifier()
         self.config_manager = ConfigManager()
         self.history_file = "fund_history.json"
         self.report_history_file = "fund_report_history.json"
@@ -291,22 +289,6 @@ class ReportGenerator:
             report_history["weekly"] = report_history["weekly"][-100:]
         self._save_report_history(report_history)
         
-        # 推送周度报告
-        if self.notifier.enabled:
-            success = self.notifier.send_weekly_report(
-                weekly_profit=weekly_data["weekly_profit"],
-                weekly_return=weekly_data["weekly_return"],
-                monthly_profit=monthly_data["monthly_profit"],
-                monthly_return=monthly_data["monthly_return"],
-                total_profit=total_profit,
-                total_return=total_return,
-                position_stats=position_stats
-            )
-            if success:
-                print("✅ 周度报告推送成功")
-            else:
-                print("⚠️  周度报告推送失败")
-        
         print("=== 周度报告生成完成 ===")
         print(f"周收益: ¥{weekly_data['weekly_profit']:.2f} ({weekly_data['weekly_return']*100:.2f}%)")
         print(f"月收益: ¥{monthly_data['monthly_profit']:.2f} ({monthly_data['monthly_return']*100:.2f}%)")
@@ -357,22 +339,6 @@ class ReportGenerator:
         if len(report_history["monthly"]) > 100:
             report_history["monthly"] = report_history["monthly"][-100:]
         self._save_report_history(report_history)
-        
-        # 推送月度报告
-        if self.notifier.enabled:
-            success = self.notifier.send_monthly_report(
-                monthly_profit=monthly_data["monthly_profit"],
-                monthly_return=monthly_data["monthly_return"],
-                quarterly_profit=quarterly_data["quarterly_profit"],
-                quarterly_return=quarterly_data["quarterly_return"],
-                total_profit=total_profit,
-                total_return=total_return,
-                position_stats=position_stats
-            )
-            if success:
-                print("✅ 月度报告推送成功")
-            else:
-                print("⚠️  月度报告推送失败")
         
         print("=== 月度报告生成完成 ===")
         print(f"月收益: ¥{monthly_data['monthly_profit']:.2f} ({monthly_data['monthly_return']*100:.2f}%)")

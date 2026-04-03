@@ -14,7 +14,6 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from strategy_engine import StrategyEngine
-from wechat_notifier import WechatNotifier
 from config_manager import ConfigManager
 
 def main():
@@ -25,7 +24,6 @@ def main():
         # 初始化模块
         config_manager = ConfigManager()
         strategy_engine = StrategyEngine()
-        notifier = WechatNotifier()
         
         # 执行真实净值更新
         result = strategy_engine.daily_real_update()
@@ -48,21 +46,6 @@ def main():
         daily_profit = total_info["total_value"] - yesterday_value
         daily_return = daily_profit / yesterday_value if yesterday_value > 0 else 0
         
-        # 推送每日报告
-        if notifier.enabled:
-            success = notifier.send_daily_report(
-                total_value=total_info["total_value"],
-                daily_profit=daily_profit,
-                daily_return=daily_return,
-                cumulative_profit=total_info["total_profit"],
-                cumulative_return=total_info["total_profit_rate"],
-                signals=result["signals"]
-            )
-            if success:
-                print("✅ 微信通知发送成功")
-            else:
-                print("⚠️  微信通知发送失败")
-        
         # 保存历史数据
         history_data = {
             "last_real_value": total_info["total_value"],
@@ -73,7 +56,7 @@ def main():
             json.dump(history_data, f, ensure_ascii=False, indent=2)
         
         # 执行减仓信号
-        execute_remove_signals(strategy_engine, result["signals"], notifier)
+        execute_remove_signals(strategy_engine, result["signals"])
         
         print("=== 真实净值更新完成 ===")
         print(f"总价值: ¥{total_info['total_value']:.2f}")
@@ -83,30 +66,19 @@ def main():
         
     except Exception as e:
         print(f"更新失败: {e}")
-        # 发送错误通知
-        notifier = WechatNotifier()
-        notifier.send_error_message(f"真实净值更新失败", str(e))
 
-def execute_remove_signals(strategy_engine: StrategyEngine, signals: dict, notifier: WechatNotifier):
+def execute_remove_signals(strategy_engine: StrategyEngine, signals: dict):
     """执行减仓信号
     
     Args:
         strategy_engine: 策略引擎
         signals: 交易信号
-        notifier: 微信通知器
     """
     # 执行减仓信号
     for signal in signals.get("remove", []):
         try:
             strategy_engine.execute_remove_position(signal)
             print(f"✅ 减仓: {signal['fund_name']} ({signal['fund_code']})")
-            if notifier.enabled:
-                notifier.notify_remove_position(
-                    fund_code=signal["fund_code"],
-                    fund_name=signal["fund_name"],
-                    amount=signal["amount"],
-                    reason=signal["reason"]
-                )
         except Exception as e:
             print(f"❌ 减仓失败 {signal['fund_code']}: {e}")
 

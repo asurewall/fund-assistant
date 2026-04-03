@@ -103,13 +103,10 @@ def cmd_status():
         print("No positions.")
         return
 
-    fetcher = FundFetcher()
-    total_pending = 0
-
     print(f"总成本: {info['total_cost']:,.0f} | 市值: {info['total_value']:,.0f} | 收益: {info['total_profit']:,.0f} ({info['total_profit_rate']:+.2%}) | {len(positions)}只\n")
 
-    headers = ["#", "代码", "名称", "板块", "成本", "市值", "待确认", "收益", "层", "天"]
-    col_widths = [3, 10, 45, 8, 12, 10, 12, 10, 5, 5]
+    headers = ["#", "代码", "名称", "板块", "成本", "市值", "收益", "收益率", "层", "天"]
+    col_widths = [3, 10, 45, 8, 12, 10, 10, 10, 5, 5]
     aligns = ["center", "left", "left", "left", "right", "right", "right", "right", "center", "center"]
 
     header_line = ""
@@ -130,22 +127,9 @@ def cmd_status():
         cost = p["total_amount"]
         days = p.get("hold_days", 0)
         layers = p["total_layers"]
-
-        try:
-            valuation = fetcher.get_valuation(p["code"])
-            if valuation and "estimated_nav" in valuation and valuation.get("nav", 0) > 0:
-                estimated_nav = valuation["estimated_nav"]
-                current_nav = p.get("current_nav", estimated_nav)
-                shares = cost / current_nav if current_nav > 0 else cost / estimated_nav
-                pending = shares * estimated_nav
-            else:
-                pending = cost
-        except:
-            pending = cost
-
-        pnl = pending - cost
+        current_value = p.get("current_value", 0)
+        pnl = current_value - cost
         pnl_rate = pnl / cost if cost > 0 else 0
-        total_pending += pending
 
         row = []
         row.append(cjk_rjust(str(i), col_widths[0]))
@@ -153,14 +137,12 @@ def cmd_status():
         row.append(cjk_ljust(name, col_widths[2]))
         row.append(cjk_ljust(sector, col_widths[3]))
         row.append(cjk_rjust(f"{cost:,.0f}", col_widths[4]))
-        row.append(cjk_rjust(f"{p.get('current_value', 0):,.0f}", col_widths[5]))
-        row.append(cjk_rjust(f"{pending:,.0f}", col_widths[6]))
-        row.append(cjk_rjust(f"{pnl:>+,.0f}", col_widths[7]))
+        row.append(cjk_rjust(f"{current_value:,.0f}", col_widths[5]))
+        row.append(cjk_rjust(f"{pnl:>+,.0f}", col_widths[6]))
+        row.append(cjk_rjust(f"{pnl_rate:>+,.2%}", col_widths[7]))
         row.append(cjk_ljust(str(layers), col_widths[8]))
         row.append(cjk_ljust(str(days), col_widths[9]))
         print(" ".join(row))
-
-    print(f"\n待确认总额: {total_pending:,.0f}")
 
 def cmd_update():
     """下午估值更新（盘中执行，只生成信号，不更新持仓）"""

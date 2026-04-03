@@ -35,10 +35,6 @@
       {"min_profit_rate": 0.10, "layers": 0.5}
     ]
   },
-  "wechat": {
-    "enabled": false,
-    "webhook_url": ""
-  },
   "schedule": {
     "estimate_update": "45 14 * * *",
     "real_update": "0 22 * * *",
