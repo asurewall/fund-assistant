@@ -71,12 +71,16 @@ class StrategyEngine:
                 "enabled": True,
                 "max_total_layers": 10,
                 "rules": [
-                    {"min_return": 0.005, "max_return": -0.005, "layers": 0.5},
-                    {"min_return": -0.01, "max_return": -0.005, "layers": 1},
-                    {"min_return": -0.015, "max_return": -0.01, "layers": 1.5},
-                    {"min_return": -0.025, "max_return": -0.015, "layers": 2},
-                    {"min_return": -0.03, "max_return": -0.025, "layers": 3},
-                    {"min_return": -1, "max_return": -0.03, "layers": 4}
+                    [
+                        {"min_return": -0.0085, "max_return": 0.005, "layers": 0.5},
+                        {"min_return": -0.015, "max_return": -0.0085, "layers": 1},
+                        {"min_return": -0.0225, "max_return": -0.015, "layers": 1.5},
+                        {"min_return": -0.03, "max_return": -0.0225, "layers": 2},
+                        {"min_return": -0.035, "max_return": -0.03, "layers": 2.5},
+                        {"min_return": -0.04, "max_return": -0.035, "layers": 3},
+                        {"min_return": -0.045, "max_return": -0.04, "layers": 3.5},
+                        {"min_return": -1, "max_return": -0.045, "layers": 4}
+                    ]
                 ]
             },
             "stop_loss": {
@@ -358,6 +362,12 @@ class StrategyEngine:
             # 计算加仓层数
             layers = self._calculate_add_layers(daily_change)
             if layers > 0:
+                # 计算最多能加多少层（不能超过最大层数）
+                max_add_layers = self.config["max_layers"] - position["total_layers"]
+                if max_add_layers <= 0:
+                    continue
+                # 取较小值
+                layers = min(layers, max_add_layers)
                 # 计算加仓金额
                 single_layer_amount = self.config["total_capital"] / self.config["fund_count"] / 10
                 add_amount = single_layer_amount * layers
@@ -515,8 +525,9 @@ class StrategyEngine:
         print(header_line)
         print(sep_line)
         
-        for fund_code, position in self.position_manager.positions.items():
+        for fund_code in self.position_manager.positions.keys():
             try:
+                position_info = self.position_manager.get_position_info(fund_code)
                 valuation = self.fetcher.get_valuation(fund_code)
                 if valuation and "estimated_return" in valuation:
                     daily_changes[fund_code] = valuation["estimated_return"]
@@ -524,21 +535,21 @@ class StrategyEngine:
                     # 记录估值信息（不更新持仓）
                     position_valuations.append({
                         "code": fund_code,
-                        "name": position.get("name", "")[:20],
+                        "name": position_info.get("name", "")[:20],
                         "nav": valuation.get("nav", 0),
                         "estimated_nav": valuation.get("estimated_nav", 0),
                         "estimated_return": valuation["estimated_return"],
-                        "value": position.get("current_value", 0)
+                        "value": position_info.get("current_value", 0)
                     })
                     
                     # 打印单只基金信息
-                    name = position.get("name", "")[:28]
+                    name = position_info.get("name", "")[:28]
                     row = (
                         cjk_ljust(fund_code, col_widths[0]) + " " +
                         cjk_ljust(name, col_widths[1]) + " " +
                         cjk_rjust(f"{valuation.get('estimated_nav', 0):.4f}", col_widths[2]) + " " +
                         cjk_rjust(f"{valuation['estimated_return']:.2%}", col_widths[3]) + " " +
-                        cjk_rjust(f"{position.get('current_value', 0):,.2f}", col_widths[4])
+                        cjk_rjust(f"{position_info.get('current_value', 0):,.2f}", col_widths[4])
                     )
                     print(row)
                 else:
@@ -548,10 +559,11 @@ class StrategyEngine:
                 print(f"获取基金 {fund_code} 估值失败: {e}")
                 daily_changes[fund_code] = 0.0
         # 计算当日预估总收益
-        total_value = sum(p.get("current_value", 0) for p in self.position_manager.positions.values())
+        total_info = self.position_manager.get_all_positions()
+        total_value = total_info["total_value"]
         daily_profit = sum(
-            p.get("current_value", 0) * daily_changes.get(code, 0) 
-            for code, p in self.position_manager.positions.items()
+            self.position_manager.get_position_info(code).get("current_value", 0) * daily_changes.get(code, 0) 
+            for code in self.position_manager.positions.keys()
         )
         daily_return = daily_profit / total_value if total_value > 0 else 0
         

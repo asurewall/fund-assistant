@@ -64,12 +64,14 @@ python fund.py top-drawdown -n 20
 
   | 当日涨幅范围             | 加仓层数  |
   | ------------------ | ----- |
-  | -0.5% ≤ 涨幅 < 0.5%  | 0.5 层 |
-  | -1% ≤ 涨幅 < -0.5%   | 1 层   |
-  | -1.5% ≤ 涨幅 < -1%   | 1.5 层 |
-  | -2.5% ≤ 涨幅 < -1.5% | 2 层   |
-  | -3% ≤ 涨幅 < -2.5%   | 3 层   |
-  | 涨幅 < -3%           | 4 层   |
+  | -0.85% ≤ 涨幅 < 0.5% | 0.5 层 |
+  | -1.5% ≤ 涨幅 < -0.85% | 1 层   |
+  | -2.25% ≤ 涨幅 < -1.5% | 1.5 层 |
+  | -3% ≤ 涨幅 < -2.25%  | 2 层   |
+  | -3.5% ≤ 涨幅 < -3%   | 2.5 层 |
+  | -4% ≤ 涨幅 < -3.5%   | 3 层   |
+  | -4.5% ≤ 涨幅 < -4%   | 3.5 层 |
+  | 涨幅 < -4.5%         | 4 层   |
 
   - 上限：单只基金最大 max_layers 层（默认 10 层）
 
@@ -170,12 +172,14 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
 
 | 规则示例 | 当日涨幅范围 | 加仓层数 |
 | --- | --- | --- |
-| `{"min_return": 0.005, "max_return": -0.005, "layers": 0.5}` | -0.5% ≤ 涨幅 < 0.5% | 0.5 层 |
-| `{"min_return": -0.01, "max_return": -0.005, "layers": 1}` | -1% ≤ 涨幅 < -0.5% | 1 层 |
-| `{"min_return": -0.015, "max_return": -0.01, "layers": 1.5}` | -1.5% ≤ 涨幅 < -1% | 1.5 层 |
-| `{"min_return": -0.025, "max_return": -0.015, "layers": 2}` | -2.5% ≤ 涨幅 < -1.5% | 2 层 |
-| `{"min_return": -0.03, "max_return": -0.025, "layers": 3}` | -3% ≤ 涨幅 < -2.5% | 3 层 |
-| `{"min_return": -1, "max_return": -0.03, "layers": 4}` | 涨幅 < -3% | 4 层 |
+| `{"min_return": -0.0085, "max_return": 0.005, "layers": 0.5}` | -0.85% ≤ 涨幅 < 0.5% | 0.5 层 |
+| `{"min_return": -0.015, "max_return": -0.0085, "layers": 1}` | -1.5% ≤ 涨幅 < -0.85% | 1 层 |
+| `{"min_return": -0.0225, "max_return": -0.015, "layers": 1.5}` | -2.25% ≤ 涨幅 < -1.5% | 1.5 层 |
+| `{"min_return": -0.03, "max_return": -0.0225, "layers": 2}` | -3% ≤ 涨幅 < -2.25% | 2 层 |
+| `{"min_return": -0.035, "max_return": -0.03, "layers": 2.5}` | -3.5% ≤ 涨幅 < -3% | 2.5 层 |
+| `{"min_return": -0.04, "max_return": -0.035, "layers": 3}` | -4% ≤ 涨幅 < -3.5% | 3 层 |
+| `{"min_return": -0.045, "max_return": -0.04, "layers": 3.5}` | -4.5% ≤ 涨幅 < -4% | 3.5 层 |
+| `{"min_return": -1, "max_return": -0.045, "layers": 4}` | 涨幅 < -4.5% | 4 层 |
 
 ### 止损规则 (stop_loss)
 | 字段 | 说明 | 默认值 |
@@ -218,12 +222,14 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
     "enabled": true,
     "max_total_layers": 10,
     "rules": [
-      {"min_return": 0.005, "max_return": -0.005, "layers": 0.5},
-      {"min_return": -0.01, "max_return": -0.005, "layers": 1},
-      {"min_return": -0.015, "max_return": -0.01, "layers": 1.5},
-      {"min_return": -0.025, "max_return": -0.015, "layers": 2},
-      {"min_return": -0.03, "max_return": -0.025, "layers": 3},
-      {"min_return": -1, "max_return": -0.03, "layers": 4}
+      {"min_return": -0.0085, "max_return": 0.005, "layers": 0.5},
+      {"min_return": -0.015, "max_return": -0.0085, "layers": 1},
+      {"min_return": -0.0225, "max_return": -0.015, "layers": 1.5},
+      {"min_return": -0.03, "max_return": -0.0225, "layers": 2},
+      {"min_return": -0.035, "max_return": -0.03, "layers": 2.5},
+      {"min_return": -0.04, "max_return": -0.035, "layers": 3},
+      {"min_return": -0.045, "max_return": -0.04, "layers": 3.5},
+      {"min_return": -1, "max_return": -0.045, "layers": 4}
     ]
   },
   "stop_loss": {

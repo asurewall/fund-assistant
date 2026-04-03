@@ -15,12 +15,46 @@
     "enabled": true,
     "max_total_layers": 10,
     "rules": [
-      {"min_return": 0.005, "max_return": -0.005, "layers": 0.5},
-      {"min_return": -0.01, "max_return": -0.005, "layers": 1},
-      {"min_return": -0.015, "max_return": -0.01, "layers": 1.5},
-      {"min_return": -0.025, "max_return": -0.015, "layers": 2},
-      {"min_return": -0.03, "max_return": -0.025, "layers": 3},
-      {"min_return": -1, "max_return": -0.03, "layers": 4}
+      {
+        "min_return": -0.0085,
+        "max_return": 0.005,
+        "layers": 0.5
+      },
+      {
+        "min_return": -0.015,
+        "max_return": -0.0085,
+        "layers": 1
+      },
+      {
+        "min_return": -0.0225,
+        "max_return": -0.015,
+        "layers": 1.5
+      },
+      {
+        "min_return": -0.03,
+        "max_return": -0.0225,
+        "layers": 2
+      },
+      {
+        "min_return": -0.035,
+        "max_return": -0.03,
+        "layers": 2.5
+      },
+      {
+        "min_return": -0.04,
+        "max_return": -0.035,
+        "layers": 3
+      },
+      {
+        "min_return": -0.045,
+        "max_return": -0.04,
+        "layers": 3.5
+      },
+      {
+        "min_return": -1,
+        "max_return": -0.045,
+        "layers": 4
+      }
     ]
   },
   "stop_loss": {
