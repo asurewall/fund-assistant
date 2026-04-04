@@ -64,6 +64,7 @@ class PositionManager:
             self.positions[code] = {
                 "code": code,
                 "name": "",  # 会在后续更新时填充
+                "sector": None,  # 板块信息
                 "total_amount": 0,
                 "total_layers": 0,
                 "average_nav": 0,
@@ -76,7 +77,7 @@ class PositionManager:
             }
         self._save_positions()
     
-    def add_initial_position(self, fund_code: str, amount: float, nav: float, fund_name: str = ""):
+    def add_initial_position(self, fund_code: str, amount: float, nav: float, fund_name: str = "", sector: Optional[str] = None):
         """添加建仓
         
         Args:
@@ -84,11 +85,13 @@ class PositionManager:
             amount: 建仓金额
             nav: 建仓净值
             fund_name: 基金名称
+            sector: 板块信息
         """
         if fund_code not in self.positions:
             self.positions[fund_code] = {
                 "code": fund_code,
                 "name": fund_name,
+                "sector": sector,  # 保存板块信息
                 "total_amount": 0,
                 "total_layers": 0,
                 "average_nav": 0,
@@ -116,6 +119,8 @@ class PositionManager:
         
         if fund_name:
             self.positions[fund_code]["name"] = fund_name
+        if sector:
+            self.positions[fund_code]["sector"] = sector
         
         # 初始建仓时不计算收益，等待晚上 nav-update 获取实时净值
         # self._calculate_profit(fund_code)  # 计算初始收益

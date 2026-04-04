@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from wcwidth import wcswidth
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fund_fetcher import FundFetcher
 from position_manager import PositionManager
@@ -194,6 +195,81 @@ class StrategyEngine:
         
         return "其他"
     
+    def _get_consecutive_chars(self, s: str) -> list:
+        """获取字符串中的所有连续两个字的组合
+        
+        Args:
+            s: 字符串
+            
+        Returns:
+            连续两字列表
+        """
+        if len(s) < 2:
+            return []
+        return [s[i:i+2] for i in range(len(s) - 1)]
+    
+    def _are_sectors_similar(self, sector1: str, sector2: str) -> bool:
+        """判断两个板块是否相似（有连续两个字相同）
+        
+        Args:
+            sector1: 板块1
+            sector2: 板块2
+            
+        Returns:
+            是否相似
+        """
+        if not sector1 or not sector2:
+            return False
+        if sector1 == sector2:
+            return True
+        
+        chars1 = self._get_consecutive_chars(sector1)
+        chars2 = self._get_consecutive_chars(sector2)
+        
+        for c1 in chars1:
+            if c1 in chars2:
+                return True
+        
+        return False
+    
+    def _add_sector_count(self, sector_count: dict, sector: str):
+        """添加板块计数（同时增加相似板块的计数）
+        
+        Args:
+            sector_count: 板块计数字典
+            sector: 要添加的板块
+        """
+        # 首先统计完全相同的板块
+        sector_count[sector] = sector_count.get(sector, 0) + 1
+        
+        # 然后更新相似板块的计数
+        for existing_sector in list(sector_count.keys()):
+            if existing_sector != sector and self._are_sectors_similar(existing_sector, sector):
+                sector_count[existing_sector] = sector_count.get(existing_sector, 0) + 1
+    
+    def _check_similar_sector_limit(self, sector_count: dict, sector: str, max_per_sector: int) -> bool:
+        """检查相似板块是否已超过限制
+        
+        Args:
+            sector_count: 板块计数字典
+            sector: 要检查的板块
+            max_per_sector: 每个板块最大数量
+            
+        Returns:
+            是否超过限制
+        """
+        # 检查完全相同的板块
+        if sector_count.get(sector, 0) >= max_per_sector:
+            return True
+        
+        # 检查所有相似板块
+        for existing_sector, count in sector_count.items():
+            if self._are_sectors_similar(existing_sector, sector):
+                if count >= max_per_sector:
+                    return True
+        
+        return False
+    
     def _calculate_add_layers(self, daily_change: float) -> float:
         """计算加仓层数（基于配置规则）
 
@@ -236,21 +312,34 @@ class StrategyEngine:
         signals = []
         existing_codes = set(self.position_manager.positions.keys())
         
-        # 统计已持仓板块（用于去重时计入）
+        # 统计已持仓板块（使用数据中的 sector 字段）
         sector_count = {}
         for code in existing_codes:
             pos = self.position_manager.positions.get(code, {})
-            name = pos.get("name", "")
-            sector = self._classify_sector(name)
-            sector_count[sector] = sector_count.get(sector, 0) + 1
+            sector = pos.get("sector")
+            if sector:
+                self._add_sector_count(sector_count, sector)
         
         # 筛选回撤率大于阈值的基金
         eligible_funds = [f for f in funds if f.get("drawdown", 0) < -self.config["drawdown_threshold"]]
 
+        # 并发获取所有符合条件基金的板块信息
+        def fetch_sector(fund):
+            sector = self.fetcher.get_fund_sector(fund.get("code", ""))
+            if not sector:
+                sector = self._classify_sector(fund.get("name", ""))
+            fund["sector"] = sector
+            return fund
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(fetch_sector, f): f for f in eligible_funds}
+            for future in as_completed(futures):
+                pass
+
         print(f"\n📋 符合条件的基金 ({len(eligible_funds)} 只，回撤 > {self.config['drawdown_threshold']:.0%}):")
         if eligible_funds:
-            headers = ["代码", "名称", "1年收益", "回撤", "恢复涨幅"]
-            col_widths = [10, 28, 10, 10, 10]
+            headers = ["代码", "名称", "板块", "1年收益", "回撤", "恢复涨幅"]
+            col_widths = [10, 45, 10, 10, 10, 10]
             header_line = ""
             sep_line = ""
             for h, w in zip(headers, col_widths):
@@ -259,13 +348,15 @@ class StrategyEngine:
             print(header_line)
             print(sep_line)
             for f in sorted(eligible_funds, key=lambda x: x.get("drawdown", 0)):
-                name = f.get("name", "")[:28]
+                name = f.get("name", "")[:45]
+                sector = f.get("sector", "")[:8]
                 row = (
                     cjk_ljust(f.get("code", ""), col_widths[0]) + " " +
                     cjk_ljust(name, col_widths[1]) + " " +
-                    cjk_rjust(f"{f.get('return_1y', 0):.2%}", col_widths[2]) + " " +
-                    cjk_rjust(f"{f.get('drawdown', 0):.2%}", col_widths[3]) + " " +
-                    cjk_rjust(f"{f.get('recovery_return', 0):.2%}", col_widths[4])
+                    cjk_ljust(sector, col_widths[2]) + " " +
+                    cjk_rjust(f"{f.get('return_1y', 0):.2%}", col_widths[3]) + " " +
+                    cjk_rjust(f"{f.get('drawdown', 0):.2%}", col_widths[4]) + " " +
+                    cjk_rjust(f"{f.get('recovery_return', 0):.2%}", col_widths[5])
                 )
                 print(row)
         
@@ -294,8 +385,15 @@ class StrategyEngine:
             if selected_count >= target_count:
                 break
             
-            sector = self._classify_sector(fund["name"])
-            if sector_count.get(sector, 0) >= max_per_sector:
+            # 使用之前获取并保存的板块信息
+            sector = fund.get("sector")
+            if not sector:
+                sector = self.fetcher.get_fund_sector(fund["code"])
+                if not sector:
+                    sector = self._classify_sector(fund["name"])
+            
+            # 检查相似板块是否已超过限制
+            if self._check_similar_sector_limit(sector_count, sector, max_per_sector):
                 continue
             
             # 计算建仓金额
@@ -315,7 +413,7 @@ class StrategyEngine:
             }
             signals.append(signal)
             
-            sector_count[sector] = sector_count.get(sector, 0) + 1
+            self._add_sector_count(sector_count, sector)
             selected_count += 1
         
         # 最终安全检查：确保没有已持仓的基金
@@ -376,6 +474,7 @@ class StrategyEngine:
                     "type": "add_position",
                     "fund_code": fund_code,
                     "fund_name": position["name"],
+                    "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
                     "amount": add_amount,
                     "layers": layers,
                     "nav": position["current_nav"],
@@ -413,6 +512,7 @@ class StrategyEngine:
                         "type": "remove_position",
                         "fund_code": fund_code,
                         "fund_name": info["name"],
+                        "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
                         "layers": "all",
                         "amount": info["total_amount"],
                         "reason": f"收益率 {info['profit_rate']*100:.1f}%，触发止损"
@@ -426,6 +526,7 @@ class StrategyEngine:
                     "type": "remove_position",
                     "fund_code": fund_code,
                     "fund_name": info["name"],
+                    "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
                     "layers": "all",
                     "amount": info["total_amount"],
                     "reason": f"持仓天数 {info['hold_days']} 天，达到持有期限"
@@ -444,6 +545,7 @@ class StrategyEngine:
                         "type": "remove_position",
                         "fund_code": fund_code,
                         "fund_name": info["name"],
+                        "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
                         "layers": layers,
                         "amount": amount,
                         "reason": f"收益率 {profit_rate*100:.1f}%，触发减仓规则"
@@ -463,7 +565,8 @@ class StrategyEngine:
             fund_code=signal["fund_code"],
             amount=signal["amount"],
             nav=signal["nav"],
-            fund_name=signal["fund_name"]
+            fund_name=signal["fund_name"],
+            sector=signal.get("sector")
         )
     
     def execute_add_position(self, signal: Dict):
@@ -664,7 +767,6 @@ class StrategyEngine:
         print(f"{'合计':<10} {'':<22} {'':>10} {daily_return:>9.2%} {total_info['total_value']:>14,.2f} "
               f"{total_info['total_profit']:>10,.2f} ({total_info['total_profit_rate']:>+.2%})")
         print(f"\n💰 当日收益: ¥{daily_profit:,.2f} ({daily_return:.2%})")
-        print("\n※ 待确认市值：基于昨日持仓和今日净值计算，需手动确认交易")
 
         return {
             "timestamp": datetime.now().isoformat(),

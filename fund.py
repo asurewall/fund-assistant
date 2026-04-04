@@ -3,6 +3,12 @@
 import json
 import os
 import sys
+
+# Windows GBK 编码修复：强制 stdout 使用 UTF-8
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from tabulate import tabulate
 from wcwidth import wcswidth
 from datetime import datetime
@@ -122,8 +128,8 @@ def cmd_status():
     print(sep_line)
 
     for i, p in enumerate(sorted(positions, key=lambda x: -x["total_amount"]), 1):
-        name = p["name"][:30]
-        sector = classify(p["name"])[:4]
+        name = p["name"][:45]
+        sector = p.get("sector", classify(p["name"]))[:8]
         cost = p["total_amount"]
         days = p.get("hold_days", 0)
         layers = p["total_layers"]
@@ -173,21 +179,95 @@ def cmd_update():
     # 打印详细信号
     if signals['initial']:
         print("\n  【建仓信号详情】")
-        for sig in signals['initial']:
+        headers = ["#", "代码", "名称", "板块", "回撤", "金额"]
+        col_widths = [3, 10, 45, 10, 10, 12]
+        header_line = ""
+        sep_line = ""
+        for h, w in zip(headers, col_widths):
+            header_line += cjk_ljust(h, w) + " "
+            sep_line += "-" * w + " "
+        print("    " + header_line)
+        print("    " + sep_line)
+        for i, sig in enumerate(signals['initial'], 1):
             amount = sig.get('amount', 0)
-            print(f"    + {sig['fund_code']} {sig.get('fund_name', '')}: 回撤 {sig.get('drawdown', 0):.2%} | 金额 ¥{amount:,.0f}")
+            sector = sig.get('sector', '')[:8]
+            name = sig.get('fund_name', '')[:45]
+            drawdown = sig.get('drawdown', 0)
+            row = (
+                cjk_rjust(str(i), col_widths[0]) + " " +
+                cjk_ljust(sig['fund_code'], col_widths[1]) + " " +
+                cjk_ljust(name, col_widths[2]) + " " +
+                cjk_ljust(sector, col_widths[3]) + " " +
+                cjk_rjust(f"{drawdown:.2%}", col_widths[4]) + " " +
+                cjk_rjust(f"¥{amount:,.0f}", col_widths[5])
+            )
+            print("    " + row)
 
     if signals['add']:
         print("\n  【加仓信号详情】")
-        for sig in signals['add']:
+        headers = ["#", "代码", "名称", "板块", "当前层", "加层", "金额"]
+        col_widths = [3, 10, 45, 10, 8, 8, 12]
+        header_line = ""
+        sep_line = ""
+        for h, w in zip(headers, col_widths):
+            header_line += cjk_ljust(h, w) + " "
+            sep_line += "-" * w + " "
+        print("    " + header_line)
+        print("    " + sep_line)
+        for i, sig in enumerate(signals['add'], 1):
             amount = sig.get('amount', 0)
-            print(f"    + {sig['fund_code']}: 当前层数 {sig.get('current_layers', 0)}, 加仓 {sig.get('layers', 0)} 层 | 金额 ¥{amount:,.0f}")
+            sector = sig.get('sector', '')
+            name = ""
+            if not sector or not name:
+                pm = PositionManager(config_file=CONFIG_FILE)
+                if sig['fund_code'] in pm.positions:
+                    sector = pm.positions[sig['fund_code']].get('sector', '')
+                    name = pm.positions[sig['fund_code']].get('name', '')
+            sector = sector[:8]
+            name = name[:45]
+            row = (
+                cjk_rjust(str(i), col_widths[0]) + " " +
+                cjk_ljust(sig['fund_code'], col_widths[1]) + " " +
+                cjk_ljust(name, col_widths[2]) + " " +
+                cjk_ljust(sector, col_widths[3]) + " " +
+                cjk_rjust(str(sig.get('current_layers', 0)), col_widths[4]) + " " +
+                cjk_rjust(str(sig.get('layers', 0)), col_widths[5]) + " " +
+                cjk_rjust(f"¥{amount:,.0f}", col_widths[6])
+            )
+            print("    " + row)
 
     if signals['remove']:
         print("\n  【减仓信号详情】")
-        for sig in signals['remove']:
+        headers = ["#", "代码", "名称", "板块", "原因", "金额"]
+        col_widths = [3, 10, 45, 10, 30, 12]
+        header_line = ""
+        sep_line = ""
+        for h, w in zip(headers, col_widths):
+            header_line += cjk_ljust(h, w) + " "
+            sep_line += "-" * w + " "
+        print("    " + header_line)
+        print("    " + sep_line)
+        for i, sig in enumerate(signals['remove'], 1):
             amount = sig.get('amount', 0)
-            print(f"    - {sig['fund_code']}: {sig.get('reason', '')} | 金额 ¥{amount:,.0f}")
+            sector = sig.get('sector', '')
+            name = ""
+            if not sector or not name:
+                pm = PositionManager(config_file=CONFIG_FILE)
+                if sig['fund_code'] in pm.positions:
+                    sector = pm.positions[sig['fund_code']].get('sector', '')
+                    name = pm.positions[sig['fund_code']].get('name', '')
+            sector = sector[:8]
+            name = name[:45]
+            reason = sig.get('reason', '')[:30]
+            row = (
+                cjk_rjust(str(i), col_widths[0]) + " " +
+                cjk_ljust(sig['fund_code'], col_widths[1]) + " " +
+                cjk_ljust(name, col_widths[2]) + " " +
+                cjk_ljust(sector, col_widths[3]) + " " +
+                cjk_ljust(reason, col_widths[4]) + " " +
+                cjk_rjust(f"¥{amount:,.0f}", col_widths[5])
+            )
+            print("    " + row)
 
     # 保存信号到文件，供 nav-update 使用
     from datetime import datetime
@@ -222,9 +302,9 @@ def cmd_report():
     print()
     
     print("📋 持仓详情")
-    headers = ["#", "代码", "名称", "成本", "市值", "收益", "收益率", "层", "天"]
-    col_widths = [3, 10, 35, 12, 12, 12, 10, 5, 5]
-    aligns = ["center", "left", "left", "right", "right", "right", "right", "center", "center"]
+    headers = ["#", "代码", "名称", "板块", "成本", "市值", "收益", "收益率", "层", "天"]
+    col_widths = [3, 10, 45, 10, 12, 12, 12, 10, 5, 5]
+    aligns = ["center", "left", "left", "left", "right", "right", "right", "right", "center", "center"]
 
     header_line = ""
     sep_line = ""
@@ -239,7 +319,8 @@ def cmd_report():
     print(sep_line)
 
     for i, p in enumerate(sorted(info["positions"], key=lambda x: -x["total_amount"]), 1):
-        name = p["name"][:25]
+        name = p["name"][:45]
+        sector = p.get("sector", "")[:8]
         cost = p["total_amount"]
         days = p.get("hold_days", 0)
         layers = p["total_layers"]
@@ -251,51 +332,15 @@ def cmd_report():
         row.append(cjk_rjust(str(i), col_widths[0]))
         row.append(cjk_ljust(p["code"], col_widths[1]))
         row.append(cjk_ljust(name, col_widths[2]))
-        row.append(cjk_rjust(f"{cost:,.0f}", col_widths[3]))
-        row.append(cjk_rjust(f"{current_value:,.0f}", col_widths[4]))
-        row.append(cjk_rjust(f"{pnl:>+,.0f}", col_widths[5]))
-        row.append(cjk_rjust(f"{pnl_rate:>+,.2%}", col_widths[6]))
-        row.append(cjk_ljust(str(layers), col_widths[7]))
-        row.append(cjk_ljust(str(days), col_widths[8]))
+        row.append(cjk_ljust(sector, col_widths[3]))
+        row.append(cjk_rjust(f"{cost:,.0f}", col_widths[4]))
+        row.append(cjk_rjust(f"{current_value:,.0f}", col_widths[5]))
+        row.append(cjk_rjust(f"{pnl:>+,.0f}", col_widths[6]))
+        row.append(cjk_rjust(f"{pnl_rate:>+,.2%}", col_widths[7]))
+        row.append(cjk_ljust(str(layers), col_widths[8]))
+        row.append(cjk_ljust(str(days), col_widths[9]))
         print(" ".join(row))
     
-    print()
-    print("📝 交易详情")
-    print("-" * 80)
-    for p in sorted(info["positions"], key=lambda x: -x["total_amount"]):
-        fund_code = p["code"]
-        fund_name = p["name"]
-        position = pm.positions.get(fund_code, {})
-        transactions = position.get("positions", [])
-        
-        if not transactions:
-            continue
-            
-        print(f"\n{fund_code} {fund_name}")
-        print("  " + "-" * 70)
-        
-        for tx in transactions:
-            tx_type = tx.get("type", "")
-            date = tx.get("date", "").split("T")[0]
-            amount = tx.get("amount", 0)
-            nav = tx.get("nav", 0)
-            shares = tx.get("shares", 0)
-            tx_layers = tx.get("layers", "")
-            
-            if tx_type == "initial":
-                type_label = "建仓"
-                layers_str = f"{p.get('initial_layers', 4)}层"
-            elif tx_type == "add":
-                type_label = "加仓"
-                layers_str = f"+{tx_layers}层"
-            elif tx_type == "remove":
-                type_label = "减仓"
-                layers_str = f"-{tx_layers if tx_layers else '全部'}"
-            else:
-                type_label = tx_type
-                layers_str = ""
-            
-            print(f"  {date} | {type_label:4} | {layers_str:6} | ¥{amount:>8,.0f} | @{nav:.4f} | {shares:>9.2f}份")
     print()
     print("=" * 80)
 
@@ -369,7 +414,9 @@ def cmd_nav_update(auto=False):
 
     confirm = "n"  # 默认不执行
 
-    if initial_signals or add_signals or remove_signals:
+    has_trade = initial_signals or add_signals or remove_signals
+
+    if has_trade:
         print(f"\n📋 待执行交易 (信号日期: {signal_date}):")
         total_add_amount = 0
         total_remove_amount = 0
@@ -378,44 +425,97 @@ def cmd_nav_update(auto=False):
         if initial_signals:
             print(f"\n  【建仓】{len(initial_signals)} 笔:")
             max_per_fund = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10)
-            for sig in initial_signals:
+            headers = ["#", "代码", "名称", "板块", "层数", "金额"]
+            col_widths = [3, 10, 45, 10, 8, 12]
+            header_line = ""
+            sep_line = ""
+            for h, w in zip(headers, col_widths):
+                header_line += cjk_ljust(h, w) + " "
+                sep_line += "-" * w + " "
+            print("    " + header_line)
+            print("    " + sep_line)
+            for i, sig in enumerate(initial_signals, 1):
                 fund_code = sig['fund_code']
                 fund_name = sig.get('fund_name', '')
                 amount = sig.get('amount', 0)
-                # 计算建仓层数 = 买入金额 / 单只基金最大投入金额 * 10
+                sector = sig.get('sector', '')
                 layers = amount / max_per_fund * 10 if max_per_fund > 0 else 0
                 total_initial_amount += amount
-                print(f"    + {fund_code} {fund_name}: 建仓 {layers:.1f}层 = ¥{amount:,.0f}")
+                row = (
+                    cjk_rjust(str(i), col_widths[0]) + " " +
+                    cjk_ljust(fund_code, col_widths[1]) + " " +
+                    cjk_ljust(fund_name[:45], col_widths[2]) + " " +
+                    cjk_ljust(sector[:8], col_widths[3]) + " " +
+                    cjk_rjust(f"{layers:.1f}层", col_widths[4]) + " " +
+                    cjk_rjust(f"¥{amount:,.0f}", col_widths[5])
+                )
+                print("    " + row)
 
         if add_signals:
             print(f"\n  【加仓】{len(add_signals)} 笔:")
-            for sig in add_signals:
+            headers = ["#", "代码", "名称", "板块", "层数", "净值", "金额"]
+            col_widths = [3, 10, 45, 10, 8, 10, 12]
+            header_line = ""
+            sep_line = ""
+            for h, w in zip(headers, col_widths):
+                header_line += cjk_ljust(h, w) + " "
+                sep_line += "-" * w + " "
+            print("    " + header_line)
+            print("    " + sep_line)
+            for i, sig in enumerate(add_signals, 1):
                 fund_code = sig['fund_code']
                 layers = sig.get('layers', 0)
                 amount = sig.get('amount', 0)
                 nav = sig.get('nav', 0)
                 fund_name = sig.get('fund_name', '') or pm.positions.get(fund_code, {}).get('name', '')
                 pos_data = pm.positions.get(fund_code, {})
+                sector = pos_data.get('sector', '')
                 if amount == 0:
                     single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
                     amount = single_layer_amount * layers
                 if nav == 0:
                     nav = pos_data.get("current_nav", 0)
                 total_add_amount += amount
-                print(f"    + {fund_code} {fund_name}: +{layers}层 @ {nav:.4f} = ¥{amount:,.0f}")
+                row = (
+                    cjk_rjust(str(i), col_widths[0]) + " " +
+                    cjk_ljust(fund_code, col_widths[1]) + " " +
+                    cjk_ljust(fund_name[:45], col_widths[2]) + " " +
+                    cjk_ljust(sector[:8], col_widths[3]) + " " +
+                    cjk_rjust(f"+{layers}层", col_widths[4]) + " " +
+                    cjk_rjust(f"{nav:.4f}", col_widths[5]) + " " +
+                    cjk_rjust(f"¥{amount:,.0f}", col_widths[6])
+                )
+                print("    " + row)
 
         if remove_signals:
             print(f"\n  【减仓】{len(remove_signals)} 笔:")
-            for sig in remove_signals:
+            headers = ["#", "代码", "名称", "板块", "金额"]
+            col_widths = [3, 10, 45, 10, 12]
+            header_line = ""
+            sep_line = ""
+            for h, w in zip(headers, col_widths):
+                header_line += cjk_ljust(h, w) + " "
+                sep_line += "-" * w + " "
+            print("    " + header_line)
+            print("    " + sep_line)
+            for i, sig in enumerate(remove_signals, 1):
                 fund_code = sig['fund_code']
                 if fund_code in pm.positions:
                     pos = pm.positions[fund_code]
                     amount = pos.get("total_amount", 0)
                     total_remove_amount += amount
                     fund_name = pos.get("name", "")
-                    print(f"    - {fund_code} {fund_name}: 全部卖出 = ¥{amount:,.0f}")
+                    sector = pos.get('sector', '')
+                    row = (
+                        cjk_rjust(str(i), col_widths[0]) + " " +
+                        cjk_ljust(fund_code, col_widths[1]) + " " +
+                        cjk_ljust(fund_name[:45], col_widths[2]) + " " +
+                        cjk_ljust(sector[:8], col_widths[3]) + " " +
+                        cjk_rjust(f"¥{amount:,.0f}", col_widths[4])
+                    )
+                    print("    " + row)
 
-        print(f"\n  资金变动: ¥{total_initial_amount:,.0f} (建仓) / -¥{total_add_amount:,.0f} (加仓) / +¥{total_remove_amount:,.0f} (减仓)")
+        print(f"\n  资金变动: -¥{total_initial_amount:,.0f} (建仓) / -¥{total_add_amount:,.0f} (加仓) / +¥{total_remove_amount:,.0f} (减仓)")
 
         if not auto:
             print("\n是否执行以上交易? (y/n): ", end="")
@@ -433,6 +533,8 @@ def cmd_nav_update(auto=False):
                 pm.initialize_positions(fund_codes)
         else:
             print("  取消执行交易")
+    else:
+        print("\n📋 今日无交易")
 
     # 已提前执行净值更新和收益计算
 
@@ -446,10 +548,10 @@ def cmd_nav_update(auto=False):
                 fund_name = sig.get("fund_name", "")
                 amount = sig.get("amount", 0)
                 nav = sig.get("nav", 0)
-                # 计算建仓层数 = 买入金额 / 单只基金最大投入金额 * 10
+                sector = sig.get("sector", "")
                 layers = amount / max_per_fund * 10 if max_per_fund > 0 else 0
-                pm.add_initial_position(fund_code, amount, nav, fund_name)
-                print(f"  ✅ {fund_code} {fund_name} 建仓 {layers:.1f} 层 @ {nav:.4f} = ¥{amount:,.0f}")
+                pm.add_initial_position(fund_code, amount, nav, fund_name, sector)
+                print(f"  ✅ {fund_code} {fund_name[:30]} 建仓成功")
             except Exception as e:
                 print(f"  ❌ {sig['fund_code']} 建仓失败: {e}")
 
@@ -464,7 +566,8 @@ def cmd_nav_update(auto=False):
                 nav_data = strategy.fetcher.get_current_nav(fund_code)
                 nav = nav_data.get("nav", 1.0) if nav_data else 1.0
                 pm.add_position(fund_code, layers, nav)
-                print(f"  ✅ {fund_code} 加仓 {layers} 层 @ {nav:.4f}")
+                fund_name = pm.positions[fund_code].get("name", "")
+                print(f"  ✅ {fund_code} {fund_name[:30]} 加仓成功")
             except Exception as e:
                 print(f"  ❌ {sig['fund_code']} 加仓失败: {e}")
 
@@ -476,14 +579,15 @@ def cmd_nav_update(auto=False):
                 if fund_code not in pm.positions:
                     print(f"  ⚠ {fund_code} 不在持仓中，跳过")
                     continue
+                fund_name = pm.positions[fund_code].get("name", "")
                 if layers == "all":
                     pm.remove_position(fund_code)
-                    print(f"  ✅ {fund_code} 全部卖出")
+                    print(f"  ✅ {fund_code} {fund_name[:30]} 全部卖出")
                 else:
                     total_amount = pm.positions[fund_code]["total_amount"]
                     amount = total_amount * layers
                     pm.remove_position(fund_code, amount=amount)
-                    print(f"  ✅ {fund_code} 卖出 {layers*100:.0f}% (¥{amount:,.0f})")
+                    print(f"  ✅ {fund_code} {fund_name[:30]} 卖出成功")
             except Exception as e:
                 print(f"  ❌ {sig['fund_code']} 减仓失败: {e}")
 
@@ -495,22 +599,21 @@ def cmd_nav_update(auto=False):
     if os.path.exists(SIGNALS_FILE):
         os.remove(SIGNALS_FILE)
 
-    # 打印交易后汇总
-    positions_after = list(pm.positions.keys())
-    print(f"\n� 交易后最新持仓")
-    total_info = pm.get_all_positions()
-    print(f"  总价值: ¥{total_info['total_value']:,.2f}")
-    print(f"  累计收益: ¥{total_info['total_profit']:,.2f} ({total_info['total_profit_rate']:.2%})")
-    print(f"  持仓数量: {len(total_info['positions'])} 只")
-
     # 打印持仓详情
     # 单只基金的最大投入金额 = 总资金 / 基金数量
     max_per_fund = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10)
     # 持仓层数 = 持仓成本 / 单只基金的最大投入金额
     single_layer_amount = max_per_fund / 10
     print("\n📋 当前持仓详情")
-    print(f"{'基金代码':<10} {'基金名称':<24} {'持仓层数':>8} {'当前市值':>12} {'累计收益':>12} {'收益率':>10}")
-    print("-" * 75)
+    headers = ["基金代码", "基金名称", "板块", "持仓层数", "当前市值", "累计收益", "收益率"]
+    col_widths = [10, 45, 10, 8, 12, 12, 10]
+    header_line = ""
+    sep_line = ""
+    for h, w in zip(headers, col_widths):
+        header_line += cjk_ljust(h, w) + " "
+        sep_line += "-" * w + " "
+    print(header_line)
+    print(sep_line)
     for code, pos in pm.positions.items():
         total_amount = pos.get("total_amount", 0)
         current_nav = pos.get("current_nav", 0)
@@ -524,8 +627,17 @@ def cmd_nav_update(auto=False):
             profit = 0
             profit_rate = 0
         current_layers = total_amount / single_layer_amount
-        print(f"{code:<10} {pos.get('name', '')[:22]:<24} {current_layers:>8.1f} "
-              f"¥{current_value:>10,.0f} ¥{profit:>10,.0f} {profit_rate:>9.2%}")
+        sector = pos.get('sector', '')
+        row = (
+            cjk_ljust(code, col_widths[0]) + " " +
+            cjk_ljust(pos.get('name', '')[:45], col_widths[1]) + " " +
+            cjk_ljust(sector[:8], col_widths[2]) + " " +
+            cjk_rjust(f"{current_layers:.1f}", col_widths[3]) + " " +
+            cjk_rjust(f"¥{current_value:,.0f}", col_widths[4]) + " " +
+            cjk_rjust(f"¥{profit:,.0f}", col_widths[5]) + " " +
+            cjk_rjust(f"{profit_rate:.2%}", col_widths[6])
+        )
+        print(row)
 
     # 如果有交易执行，打印交易后最新持仓
     if confirm == "y" and (initial_signals or add_signals or remove_signals):

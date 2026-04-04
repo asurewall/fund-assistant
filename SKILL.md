@@ -57,6 +57,7 @@ python fund.py top-drawdown -n 20
   - 触发条件：回撤 > drawdown_threshold（默认 20%）
   - 仓位：买入 initial_position_layers 层（默认 4 层 = 40% 仓位）
   - 板块限制：同板块最多 max_per_sector 只（默认 2 只）
+  - 板块相似度：连续两个字相同即视为同一板块（如"有色矿业"和"有色金属"都算"有色"相关板块）
   - 筛选逻辑：按回撤从大到小排序，优先建仓回撤更大的基金
 ### 加仓规则
   - 有效期：建仓后第 2 天起，至清仓前 low_fee_days - 1 天止（共 23 天）可以进行加仓
@@ -152,7 +153,7 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
 | `drawdown_cache_count`    | 回撤率缓存数量            | 800   |
 | `lookback_days`           | 回撤计算回看天数           | 90    |
 | `drawdown_max_workers`    | 回撤计算并发数            | 30    |
-| `max_per_sector`          | 同板块最多几只            | 2     |
+| `max_per_sector`          | 同板块最多几只（连续两字相同视为同一板块） | 2     |
 | `initial_position_layers` | 建仓层数               | 4     |
 | `max_layers`              | 单只基金最大层数           | 10    |
 | `add_position`            | 加仓规则（见下方详解）       |       |

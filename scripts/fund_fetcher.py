@@ -400,6 +400,48 @@ class FundFetcher:
         
         return {}
     
+    def get_fund_sector(self, fund_code: str):
+        """
+        获取基金板块信息
+        
+        Args:
+            fund_code: 基金代码
+            
+        Returns:
+            板块名称，如果获取失败返回 None
+        """
+        try:
+            url = "https://api.xiaobeiyangji.com/yangji-api/api/get-fund-detail-v310"
+            headers = {
+                "Host": "api.xiaobeiyangji.com",
+                "content-type": "application/json",
+                "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlvbklkIjoibzg5Nm81LTgwWmFVaWxteWg0N2lWbldaampSUSIsImlhdCI6MTc3NTI3NTE0NCwiZXhwIjoxNzc3ODY3MTQ0fQ.Tq1xXgNvNnDRGx3DFelVPgyYadG6RbRxCSMPQxXwSVg",
+            }
+            
+            payload = {"code": fund_code}
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            result = response.json()
+            
+            if response.status_code == 200 and "data" in result:
+                data = result["data"]
+                
+                # 尝试获取 relatedIndustryV2
+                if "relatedIndustryV2" in data and data["relatedIndustryV2"]:
+                    for industry in data["relatedIndustryV2"]:
+                        if "themeName" in industry:
+                            return industry["themeName"]
+                
+                # 尝试获取 relatedIndustry
+                if "relatedIndustry" in data and data["relatedIndustry"]:
+                    for industry in data["relatedIndustry"]:
+                        if "themeName" in industry:
+                            return industry["themeName"]
+            
+            return None
+            
+        except Exception as e:
+            return None
+    
     def calculate_drawdown(
         self,
         fund_code: str,
