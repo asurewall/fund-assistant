@@ -266,7 +266,7 @@ python fund.py trade cancel 002207      # 撤销002207的所有信号
 | 时间      | 命令                              | 说明                          |
 | ------- | ------------------------------- | --------------------------- |
 | 10:00 | `python fund.py config-update`  | 周一到周五执行更新基金列表和回撤缓存（建议交易日前一天或当日早盘执行） |
-| 10:00   | `python fund.py report`         | 每周六/每月1号生成报告              |
+| 12:00   | `python fund.py report`         | 每周六/每月1号生成报告              |
 | 14:45   | `python fund.py update`         | 周一到周五下午估值更新（生成交易信号）            |
 | 22:00   | `python fund.py nav-update --auto`     | 周一到周五晚上净值更新（自动执行交易，无需用户确认）   |
 

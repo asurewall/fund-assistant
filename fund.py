@@ -209,7 +209,95 @@ def cmd_report():
     if not info["positions"]:
         print("No positions.")
         return
-    print(json.dumps(info, ensure_ascii=False, indent=2))
+    
+    print("=" * 80)
+    print("📊 持仓汇总报告")
+    print("=" * 80)
+    print()
+    print(f"💰 总览")
+    print(f"  总成本: ¥{info['total_cost']:,.0f}")
+    print(f"  总市值: ¥{info['total_value']:,.0f}")
+    print(f"  总收益: ¥{info['total_profit']:,.0f} ({info['total_profit_rate']:+.2%})")
+    print(f"  持仓数: {len(info['positions'])} 只")
+    print()
+    
+    print("📋 持仓详情")
+    headers = ["#", "代码", "名称", "成本", "市值", "收益", "收益率", "层", "天"]
+    col_widths = [3, 10, 35, 12, 12, 12, 10, 5, 5]
+    aligns = ["center", "left", "left", "right", "right", "right", "right", "center", "center"]
+
+    header_line = ""
+    sep_line = ""
+    for h, w, a in zip(headers, col_widths, aligns):
+        if a == "right":
+            header_line += cjk_rjust(h, w) + " "
+            sep_line += "-" * w + " "
+        else:
+            header_line += cjk_ljust(h, w) + " "
+            sep_line += "-" * w + " "
+    print(header_line)
+    print(sep_line)
+
+    for i, p in enumerate(sorted(info["positions"], key=lambda x: -x["total_amount"]), 1):
+        name = p["name"][:25]
+        cost = p["total_amount"]
+        days = p.get("hold_days", 0)
+        layers = p["total_layers"]
+        current_value = p.get("current_value", 0)
+        pnl = current_value - cost
+        pnl_rate = pnl / cost if cost > 0 else 0
+
+        row = []
+        row.append(cjk_rjust(str(i), col_widths[0]))
+        row.append(cjk_ljust(p["code"], col_widths[1]))
+        row.append(cjk_ljust(name, col_widths[2]))
+        row.append(cjk_rjust(f"{cost:,.0f}", col_widths[3]))
+        row.append(cjk_rjust(f"{current_value:,.0f}", col_widths[4]))
+        row.append(cjk_rjust(f"{pnl:>+,.0f}", col_widths[5]))
+        row.append(cjk_rjust(f"{pnl_rate:>+,.2%}", col_widths[6]))
+        row.append(cjk_ljust(str(layers), col_widths[7]))
+        row.append(cjk_ljust(str(days), col_widths[8]))
+        print(" ".join(row))
+    
+    print()
+    print("📝 交易详情")
+    print("-" * 80)
+    for p in sorted(info["positions"], key=lambda x: -x["total_amount"]):
+        fund_code = p["code"]
+        fund_name = p["name"]
+        position = pm.positions.get(fund_code, {})
+        transactions = position.get("positions", [])
+        
+        if not transactions:
+            continue
+            
+        print(f"\n{fund_code} {fund_name}")
+        print("  " + "-" * 70)
+        
+        for tx in transactions:
+            tx_type = tx.get("type", "")
+            date = tx.get("date", "").split("T")[0]
+            amount = tx.get("amount", 0)
+            nav = tx.get("nav", 0)
+            shares = tx.get("shares", 0)
+            tx_layers = tx.get("layers", "")
+            
+            if tx_type == "initial":
+                type_label = "建仓"
+                layers_str = f"{p.get('initial_layers', 4)}层"
+            elif tx_type == "add":
+                type_label = "加仓"
+                layers_str = f"+{tx_layers}层"
+            elif tx_type == "remove":
+                type_label = "减仓"
+                layers_str = f"-{tx_layers if tx_layers else '全部'}"
+            else:
+                type_label = tx_type
+                layers_str = ""
+            
+            print(f"  {date} | {type_label:4} | {layers_str:6} | ¥{amount:>8,.0f} | @{nav:.4f} | {shares:>9.2f}份")
+    print()
+    print("=" * 80)
 
 def cmd_reset():
     """清空所有配置，重建环境（执行 config-update 获取最新配置）"""
