@@ -205,8 +205,8 @@ def cmd_update():
 
     if signals['add']:
         print("\n  【加仓信号详情】")
-        headers = ["#", "代码", "名称", "板块", "当前层", "加层", "金额"]
-        col_widths = [3, 10, 45, 10, 8, 8, 12]
+        headers = ["#", "代码", "名称", "板块", "当前层", "加层", "涨跌幅", "金额"]
+        col_widths = [3, 10, 45, 10, 8, 8, 10, 12]
         header_line = ""
         sep_line = ""
         for h, w in zip(headers, col_widths):
@@ -225,6 +225,7 @@ def cmd_update():
                     name = pm.positions[sig['fund_code']].get('name', '')
             sector = sector[:8]
             name = name[:45]
+            daily_change = sig.get('daily_change', 0)
             row = (
                 cjk_rjust(str(i), col_widths[0]) + " " +
                 cjk_ljust(sig['fund_code'], col_widths[1]) + " " +
@@ -232,7 +233,8 @@ def cmd_update():
                 cjk_ljust(sector, col_widths[3]) + " " +
                 cjk_rjust(str(sig.get('current_layers', 0)), col_widths[4]) + " " +
                 cjk_rjust(str(sig.get('layers', 0)), col_widths[5]) + " " +
-                cjk_rjust(f"¥{amount:,.0f}", col_widths[6])
+                cjk_rjust(f"{daily_change:.2%}", col_widths[6]) + " " +
+                cjk_rjust(f"¥{amount:,.0f}", col_widths[7])
             )
             print("    " + row)
 

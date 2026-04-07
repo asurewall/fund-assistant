@@ -485,7 +485,7 @@ class StrategyEngine:
                 signals.append(signal)
                 print(f"  {fund_code}: ✅ 生成加仓信号（{daily_change*100:.2f}%, {layers}层）")
             else:
-                print(f"  {fund_code}: 跌幅{daily_change*100:.2f}%未达到加仓条件")
+                print(f"  {fund_code}: 涨幅{daily_change*100:.2f}%未达到加仓条件")
 
         print(f"=== 共生成 {len(signals)} 个加仓信号 ===\n")
         return signals
