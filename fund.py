@@ -109,11 +109,26 @@ def cmd_status():
         print("No positions.")
         return
 
-    print(f"总成本: {info['total_cost']:,.0f} | 市值: {info['total_value']:,.0f} | 收益: {info['total_profit']:,.0f} ({info['total_profit_rate']:+.2%}) | {len(positions)}只\n")
+    # 获取最近交易日收益
+    daily_profits = pm.get_daily_profits()
+    latest_date = max(daily_profits.keys()) if daily_profits else None
+    latest_daily_profit = daily_profits.get(latest_date, {}).get("profit", 0) if latest_date else 0
+    latest_daily_return = daily_profits.get(latest_date, {}).get("return", 0) if latest_date else 0
 
-    headers = ["#", "代码", "名称", "板块", "成本", "市值", "收益", "收益率", "层", "天"]
-    col_widths = [3, 10, 45, 8, 12, 10, 10, 10, 5, 5]
-    aligns = ["center", "left", "left", "left", "right", "right", "right", "right", "center", "center"]
+    # 从 summary 读取总收益和收益率
+    summary = pm.positions.get("summary", {})
+    total_profit = summary.get("total_profit", info['total_profit'])
+    total_profit_rate = summary.get("total_profit_rate", info['total_profit_rate'])
+
+    print(f"总成本: {info['total_cost']:,.0f} | 市值: {info['total_value']:,.0f} | 收益: {total_profit:,.0f} ({total_profit_rate:+.2%}) | {len(positions)}只")
+    if latest_date:
+        print(f"最近交易日({latest_date}): 收益 {latest_daily_profit:>+,.0f} ({latest_daily_return:>+.2%})\n")
+    else:
+        print()
+
+    headers = ["#", "代码", "名称", "板块", "成本", "市值", "收益", "收益率", "层", "天", "最近交易日收益", "最近交易日涨幅"]
+    col_widths = [3, 10, 45, 8, 12, 10, 10, 10, 5, 5, 10, 10]
+    aligns = ["center", "left", "left", "left", "right", "right", "right", "right", "center", "center", "right", "right"]
 
     header_line = ""
     sep_line = ""
@@ -137,6 +152,14 @@ def cmd_status():
         pnl = current_value - cost
         pnl_rate = pnl / cost if cost > 0 else 0
 
+        # 获取基金当日收益
+        fund_daily_profit = 0
+        fund_daily_return = 0
+        if latest_date and p["code"] in pm.funds:
+            fund_daily_data = pm.funds[p["code"]].get("daily_profits", {}).get(latest_date, {})
+            fund_daily_profit = fund_daily_data.get("profit", 0)
+            fund_daily_return = fund_daily_data.get("return", 0)
+
         row = []
         row.append(cjk_rjust(str(i), col_widths[0]))
         row.append(cjk_ljust(p["code"], col_widths[1]))
@@ -148,6 +171,8 @@ def cmd_status():
         row.append(cjk_rjust(f"{pnl_rate:>+,.2%}", col_widths[7]))
         row.append(cjk_ljust(str(layers), col_widths[8]))
         row.append(cjk_ljust(str(days), col_widths[9]))
+        row.append(cjk_rjust(f"{fund_daily_profit:>+,.0f}", col_widths[10]))
+        row.append(cjk_rjust(f"{fund_daily_return:>+.2%}", col_widths[11]))
         print(" ".join(row))
 
 def cmd_update():
@@ -220,9 +245,9 @@ def cmd_update():
             name = ""
             if not sector or not name:
                 pm = PositionManager(config_file=CONFIG_FILE)
-                if sig['fund_code'] in pm.positions:
-                    sector = pm.positions[sig['fund_code']].get('sector', '')
-                    name = pm.positions[sig['fund_code']].get('name', '')
+                if sig['fund_code'] in pm.funds:
+                    sector = pm.funds[sig['fund_code']].get('sector', '')
+                    name = pm.funds[sig['fund_code']].get('name', '')
             sector = sector[:8]
             name = name[:45]
             daily_change = sig.get('daily_change', 0)
@@ -255,9 +280,9 @@ def cmd_update():
             name = ""
             if not sector or not name:
                 pm = PositionManager(config_file=CONFIG_FILE)
-                if sig['fund_code'] in pm.positions:
-                    sector = pm.positions[sig['fund_code']].get('sector', '')
-                    name = pm.positions[sig['fund_code']].get('name', '')
+                if sig['fund_code'] in pm.funds:
+                    sector = pm.funds[sig['fund_code']].get('sector', '')
+                    name = pm.funds[sig['fund_code']].get('name', '')
             sector = sector[:8]
             name = name[:45]
             reason = sig.get('reason', '')[:30]
@@ -397,6 +422,15 @@ def cmd_nav_update(auto=False):
     # 先执行净值更新和收益计算（获取实时净值）
     result = strategy.daily_real_update()
 
+    # 保存每日收益到持仓文件
+    pm.update_daily_profit(
+        result["daily_profit"], 
+        result["daily_return"], 
+        result.get("daily_changes", {}),
+        result["total_profit"],
+        result["total_profit_rate"]
+    )
+
     # 读取当天的信号文件
     if os.path.exists(SIGNALS_FILE):
         with open(SIGNALS_FILE, "r", encoding="utf-8") as f:
@@ -407,7 +441,7 @@ def cmd_nav_update(auto=False):
         signals = {"initial": [], "add": [], "remove": []}
         signal_date = ""
 
-    positions_before = list(pm.positions.keys())
+    positions_before = list(pm.funds.keys())
     print(f"当前持仓: {len(positions_before)} 只")
 
     initial_signals = signals.get("initial", [])
@@ -469,8 +503,8 @@ def cmd_nav_update(auto=False):
                 layers = sig.get('layers', 0)
                 amount = sig.get('amount', 0)
                 nav = sig.get('nav', 0)
-                fund_name = sig.get('fund_name', '') or pm.positions.get(fund_code, {}).get('name', '')
-                pos_data = pm.positions.get(fund_code, {})
+                fund_name = sig.get('fund_name', '') or pm.funds.get(fund_code, {}).get('name', '')
+                pos_data = pm.funds.get(fund_code, {})
                 sector = pos_data.get('sector', '')
                 if amount == 0:
                     single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
@@ -502,8 +536,8 @@ def cmd_nav_update(auto=False):
             print("    " + sep_line)
             for i, sig in enumerate(remove_signals, 1):
                 fund_code = sig['fund_code']
-                if fund_code in pm.positions:
-                    pos = pm.positions[fund_code]
+                if fund_code in pm.funds:
+                    pos = pm.funds[fund_code]
                     amount = pos.get("total_amount", 0)
                     total_remove_amount += amount
                     fund_name = pos.get("name", "")
@@ -562,13 +596,13 @@ def cmd_nav_update(auto=False):
             try:
                 fund_code = sig["fund_code"]
                 layers = sig.get("layers", 0)
-                if fund_code not in pm.positions:
+                if fund_code not in pm.funds:
                     print(f"  ⚠ {fund_code} 不在持仓中，跳过")
                     continue
                 nav_data = strategy.fetcher.get_current_nav(fund_code)
                 nav = nav_data.get("nav", 1.0) if nav_data else 1.0
                 pm.add_position(fund_code, layers, nav)
-                fund_name = pm.positions[fund_code].get("name", "")
+                fund_name = pm.funds[fund_code].get("name", "")
                 print(f"  ✅ {fund_code} {fund_name[:30]} 加仓成功")
             except Exception as e:
                 print(f"  ❌ {sig['fund_code']} 加仓失败: {e}")
@@ -578,15 +612,15 @@ def cmd_nav_update(auto=False):
             try:
                 fund_code = sig["fund_code"]
                 layers = sig.get("layers", "all")
-                if fund_code not in pm.positions:
+                if fund_code not in pm.funds:
                     print(f"  ⚠ {fund_code} 不在持仓中，跳过")
                     continue
-                fund_name = pm.positions[fund_code].get("name", "")
+                fund_name = pm.funds[fund_code].get("name", "")
                 if layers == "all":
                     pm.remove_position(fund_code)
                     print(f"  ✅ {fund_code} {fund_name[:30]} 全部卖出")
                 else:
-                    total_amount = pm.positions[fund_code]["total_amount"]
+                    total_amount = pm.funds[fund_code]["total_amount"]
                     amount = total_amount * layers
                     pm.remove_position(fund_code, amount=amount)
                     print(f"  ✅ {fund_code} {fund_name[:30]} 卖出成功")
@@ -594,7 +628,7 @@ def cmd_nav_update(auto=False):
                 print(f"  ❌ {sig['fund_code']} 减仓失败: {e}")
 
         # 交易后重新计算收益
-        for code in pm.positions:
+        for code in pm.funds:
             pm._calculate_profit(code)
 
     # 删除信号文件
@@ -616,7 +650,7 @@ def cmd_nav_update(auto=False):
         sep_line += "-" * w + " "
     print(header_line)
     print(sep_line)
-    for code, pos in pm.positions.items():
+    for code, pos in pm.funds.items():
         total_amount = pos.get("total_amount", 0)
         current_nav = pos.get("current_nav", 0)
         average_nav = pos.get("average_nav", 0)
@@ -645,7 +679,7 @@ def cmd_nav_update(auto=False):
     if confirm == "y" and (initial_signals or add_signals or remove_signals):
         total_after_trade = 0
         total_profit_after = 0
-        for code, p in pm.positions.items():
+        for code, p in pm.funds.items():
             total_amount = p.get("total_amount", 0)
             current_nav = p.get("current_nav", 0)
             average_nav = p.get("average_nav", 0)
@@ -661,7 +695,7 @@ def cmd_nav_update(auto=False):
         print("\n📋 交易后最新持仓")
         print(f"  总价值: ¥{total_after_trade:,.2f}")
         print(f"  累计收益: ¥{total_profit_after:,.2f} ({profit_rate_after:.2%})")
-        print(f"  持仓数量: {len(pm.positions)} 只")
+        print(f"  持仓数量: {len(pm.funds)} 只")
 
     print("\n" + "=" * 60)
     print("净值更新完成")
@@ -792,10 +826,10 @@ def cmd_trade(args):
             else:
                 layers = float(arg)
         pm = PositionManager(config_file=CONFIG_FILE)
-        if fund_code not in pm.positions:
+        if fund_code not in pm.funds:
             print(f"错误: {fund_code} 不在持仓中")
             return
-        pos = pm.positions[fund_code]
+        pos = pm.funds[fund_code]
         current_layers = pos.get("total_layers", 0)
         single_layer_amount = pm.config.get("total_capital", 50000) / pm.config.get("fund_count", 10) / 10
         if amount is None:
@@ -817,10 +851,10 @@ def cmd_trade(args):
     elif subcmd == "remove":
         layers_str = args[2] if len(args) > 2 else "all"
         pm = PositionManager(config_file=CONFIG_FILE)
-        if fund_code not in pm.positions:
+        if fund_code not in pm.funds:
             print(f"错误: {fund_code} 不在持仓中")
             return
-        pos = pm.positions[fund_code]
+        pos = pm.funds[fund_code]
         total_amount = pos.get("total_amount", 0)
         if layers_str == "all":
             layers = "all"

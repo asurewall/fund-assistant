@@ -310,12 +310,12 @@ class StrategyEngine:
             建仓信号列表
         """
         signals = []
-        existing_codes = set(self.position_manager.positions.keys())
+        existing_codes = set(self.position_manager.funds.keys())
         
         # 统计已持仓板块（使用数据中的 sector 字段）
         sector_count = {}
         for code in existing_codes:
-            pos = self.position_manager.positions.get(code, {})
+            pos = self.position_manager.funds.get(code, {})
             sector = pos.get("sector")
             if sector:
                 self._add_sector_count(sector_count, sector)
@@ -419,7 +419,7 @@ class StrategyEngine:
         # 最终安全检查：确保没有已持仓的基金
         final_signals = []
         for sig in signals:
-            if sig["fund_code"] not in self.position_manager.positions:
+            if sig["fund_code"] not in self.position_manager.funds:
                 final_signals.append(sig)
         
         return final_signals
@@ -435,7 +435,7 @@ class StrategyEngine:
         """
         signals = []
         for fund_code, daily_change in daily_changes.items():
-            if fund_code not in self.position_manager.positions:
+            if fund_code not in self.position_manager.funds:
                 continue
             position = self.position_manager.get_position_info(fund_code)
             # 检查是否达到最大层数
@@ -474,7 +474,7 @@ class StrategyEngine:
                     "type": "add_position",
                     "fund_code": fund_code,
                     "fund_name": position["name"],
-                    "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
+                    "sector": self.position_manager.funds.get(fund_code, {}).get("sector", ""),
                     "amount": add_amount,
                     "layers": layers,
                     "nav": position["current_nav"],
@@ -501,7 +501,7 @@ class StrategyEngine:
         remove_config = self.config.get("remove_position", {})
         rules = remove_config.get("rules", [])
 
-        for fund_code, position in self.position_manager.positions.items():
+        for fund_code, position in self.position_manager.funds.items():
             info = self.position_manager.get_position_info(fund_code)
 
             # 止损检查
@@ -512,7 +512,7 @@ class StrategyEngine:
                         "type": "remove_position",
                         "fund_code": fund_code,
                         "fund_name": info["name"],
-                        "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
+                        "sector": self.position_manager.funds.get(fund_code, {}).get("sector", ""),
                         "layers": "all",
                         "amount": info["total_amount"],
                         "reason": f"收益率 {info['profit_rate']*100:.1f}%，触发止损"
@@ -526,7 +526,7 @@ class StrategyEngine:
                     "type": "remove_position",
                     "fund_code": fund_code,
                     "fund_name": info["name"],
-                    "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
+                    "sector": self.position_manager.funds.get(fund_code, {}).get("sector", ""),
                     "layers": "all",
                     "amount": info["total_amount"],
                     "reason": f"持仓天数 {info['hold_days']} 天，达到持有期限"
@@ -545,7 +545,7 @@ class StrategyEngine:
                         "type": "remove_position",
                         "fund_code": fund_code,
                         "fund_name": info["name"],
-                        "sector": self.position_manager.positions.get(fund_code, {}).get("sector", ""),
+                        "sector": self.position_manager.funds.get(fund_code, {}).get("sector", ""),
                         "layers": layers,
                         "amount": amount,
                         "reason": f"收益率 {profit_rate*100:.1f}%，触发减仓规则"
@@ -628,7 +628,7 @@ class StrategyEngine:
         print(header_line)
         print(sep_line)
         
-        for fund_code in self.position_manager.positions.keys():
+        for fund_code in self.position_manager.funds.keys():
             try:
                 position_info = self.position_manager.get_position_info(fund_code)
                 valuation = self.fetcher.get_valuation(fund_code)
@@ -666,7 +666,7 @@ class StrategyEngine:
         total_value = total_info["total_value"]
         daily_profit = sum(
             self.position_manager.get_position_info(code).get("current_value", 0) * daily_changes.get(code, 0) 
-            for code in self.position_manager.positions.keys()
+            for code in self.position_manager.funds.keys()
         )
         daily_return = daily_profit / total_value if total_value > 0 else 0
         
@@ -725,7 +725,7 @@ class StrategyEngine:
 
         # 更新持仓真实净值（直接从API获取最新净值，不使用缓存）
         daily_changes = {}
-        for fund_code, position in self.position_manager.positions.items():
+        for fund_code, position in self.position_manager.funds.items():
             try:
                 nav_data = self.fetcher.get_current_nav(fund_code)
                 if nav_data and "nav" in nav_data:
@@ -749,7 +749,7 @@ class StrategyEngine:
 
         # 计算当日收益
         daily_profit = 0
-        for code, p in self.position_manager.positions.items():
+        for code, p in self.position_manager.funds.items():
             total_amount = p.get("total_amount", 0)
             current_nav = p.get("current_nav", 0)
             average_nav = p.get("average_nav", 0)
@@ -775,6 +775,7 @@ class StrategyEngine:
             "total_profit_rate": total_info["total_profit_rate"],
             "daily_profit": daily_profit,
             "daily_return": daily_return,
+            "daily_changes": daily_changes,
             "position_count": len(total_info["positions"])
         }
     
