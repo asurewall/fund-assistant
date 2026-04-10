@@ -70,8 +70,8 @@ def get_top_drawdown_funds(top: int = 100):
     for i, r in enumerate(results, 1):
         dd = r.get("drawdown", 0)
         dd_str = f"{dd:.2%}"
-        # 计算回到高点需要的涨幅: 1/(1-回撤率) - 1
-        recover_return = 1 / (1 - dd) - 1 if dd < 1 else float('inf')
+        # 计算回到高点需要的涨幅: 1/(1+|回撤率|) - 1 = 1/(1+dd) - 1 (dd是负数)
+        recover_return = 1 / (1 + dd) - 1 if dd > -1 else float('inf')
         recover_str = f"{recover_return:.2%}"
         nav = r.get("current_nav", r.get("nav", 0))
         ret_1y = r.get("return_1y", 0)
