@@ -9,31 +9,11 @@ import json
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from wcwidth import wcswidth
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fund_fetcher import FundFetcher
 from position_manager import PositionManager
-
-
-def cjk_ljust(text, width):
-    """中英文混合字符串左对齐（按显示宽度计算）"""
-    text = text or ""
-    display_width = wcswidth(text)
-    if display_width < 0:
-        display_width = len(text)
-    padding = width - display_width
-    return text + " " * padding
-
-
-def cjk_rjust(text, width):
-    """中英文混合字符串右对齐（按显示宽度计算）"""
-    text = text or ""
-    display_width = wcswidth(text)
-    if display_width < 0:
-        display_width = len(text)
-    padding = width - display_width
-    return " " * padding + text
+from display_utils import cjk_ljust, cjk_rjust, print_table
 
 class StrategyEngine:
     """策略引擎类"""

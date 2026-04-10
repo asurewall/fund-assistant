@@ -9,6 +9,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from display_utils import cjk_ljust, cjk_rjust, print_table
+
 
 def get_top_drawdown_funds(top: int = 100):
     """获取回撤率排名靠前的基金
@@ -55,15 +57,22 @@ def get_top_drawdown_funds(top: int = 100):
     results = valid_funds[:top]
 
     # 打印结果
-    print(f"\n{'='*95}")
-    print(f"回撤率排名 TOP {len(results)}")
-    print(f"{'='*95}")
-    print(f"{'排名':<6} {'代码':<10} {'名称':<20} {'净值':>10} {'回撤率':>10} {'1年收益':>10} {'最高点日期':<12}")
-    print("-" * 95)
+    headers = ["排名", "代码", "名称", "净值", "回撤率", "回高点涨幅", "1年收益", "最高点日期"]
+    col_widths = [6, 10, 45, 10, 10, 10, 10, 20]
+    aligns = ["center", "left", "left", "right", "right", "right", "right", "left"]
 
+    total_width = sum(col_widths) + len(col_widths) - 1
+    print(f"\n{'='*total_width}")
+    print(f"回撤率排名 TOP {len(results)}")
+    print(f"{'='*total_width}")
+
+    rows = []
     for i, r in enumerate(results, 1):
         dd = r.get("drawdown", 0)
         dd_str = f"{dd:.2%}"
+        # 计算回到高点需要的涨幅: 1/(1-回撤率) - 1
+        recover_return = 1 / (1 - dd) - 1 if dd < 1 else float('inf')
+        recover_str = f"{recover_return:.2%}"
         nav = r.get("current_nav", r.get("nav", 0))
         ret_1y = r.get("return_1y", 0)
         ret_str = f"{ret_1y:.2%}" if ret_1y else "N/A"
@@ -76,7 +85,19 @@ def get_top_drawdown_funds(top: int = 100):
                 max_date_str = max_date
         else:
             max_date_str = "N/A"
-        print(f"{i:<6} {r['code']:<10} {r['name'][:18]:<20} {nav:>10.4f} {dd_str:>10} {ret_str:>10} {max_date_str}")
+
+        rows.append([
+            i,
+            r['code'],
+            r['name'][:45],
+            f"{nav:.4f}",
+            dd_str,
+            recover_str,
+            ret_str,
+            max_date_str
+        ])
+
+    print_table(headers, col_widths, aligns, rows)
 
     return results
 

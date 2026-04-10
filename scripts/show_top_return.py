@@ -8,6 +8,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from display_utils import print_table
+
 
 def get_top_return_funds(top: int = 100):
     """获取年收益率排名靠前的基金
@@ -52,16 +54,28 @@ def get_top_return_funds(top: int = 100):
     results = valid_funds[:top]
 
     # 打印结果
-    print(f"\n{'='*70}")
-    print(f"年收益率排名 TOP {len(results)}")
-    print(f"{'='*70}")
-    print(f"{'排名':<6} {'代码':<10} {'名称':<28} {'净值':>10} {'1年收益':>10}")
-    print("-" * 70)
+    headers = ["排名", "代码", "名称", "净值", "1年收益"]
+    col_widths = [6, 10, 45, 10, 10]
+    aligns = ["center", "left", "left", "right", "right"]
 
+    total_width = sum(col_widths) + len(col_widths) - 1
+    print(f"\n{'='*total_width}")
+    print(f"年收益率排名 TOP {len(results)}")
+    print(f"{'='*total_width}")
+
+    rows = []
     for i, r in enumerate(results, 1):
         ret = r.get("return_1y", 0)
         ret_str = f"{ret:.2%}"
-        print(f"{i:<6} {r['code']:<10} {r['name'][:26]:<28} {r.get('nav', 0):>10.4f} {ret_str:>10}")
+        rows.append([
+            i,
+            r['code'],
+            r['name'][:45],
+            f"{r.get('nav', 0):.4f}",
+            ret_str
+        ])
+
+    print_table(headers, col_widths, aligns, rows)
 
     return results
 
